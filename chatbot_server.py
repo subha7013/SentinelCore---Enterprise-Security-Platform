@@ -1,13 +1,14 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 import re
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-HOST = "127.0.0.1"
-PORT = 5000
-BACKEND_API = "http://localhost:8080"
+HOST = os.environ.get("HOST", "0.0.0.0")
+PORT = int(os.environ.get("PORT", "5000"))
+BACKEND_API = os.environ.get("BACKEND_API", "http://localhost:8080")
 INCIDENT_ID_PATTERN = re.compile(r"\b[0-9a-fA-F]{24}\b")
 
 # General Module Operations Guidance Database

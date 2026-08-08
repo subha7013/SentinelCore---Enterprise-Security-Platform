@@ -1,0 +1,2 @@
+# SentinelCore Python Chatbot Server Dependencies
+# Built using Python Standard Library (http.server, urllib, json, re, os)
