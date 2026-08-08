@@ -2,6 +2,7 @@ package com.sentinelcore.service;
 
 import com.sentinelcore.model.AuditLog;
 import com.sentinelcore.repository.AuditLogRepository;
+import com.sentinelcore.util.ClientIpUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -28,7 +29,7 @@ public class AuditLogService {
     private AlertService alertService;
 
     public void log(String userId, String userEmail, String action, String module, String description) {
-        String ipAddress = request.getRemoteAddr();
+        String ipAddress = ClientIpUtils.getClientIpAddress(request);
         AuditLog auditLog = AuditLog.builder()
                 .userId(userId)
                 .userEmail(userEmail)

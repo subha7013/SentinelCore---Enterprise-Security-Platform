@@ -34,6 +34,8 @@ public class User {
 
     private LocalDateTime lastLogin;
 
+    private String lastLoginIp;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

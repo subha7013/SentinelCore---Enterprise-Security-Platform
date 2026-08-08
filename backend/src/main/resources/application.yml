@@ -1,14 +1,18 @@
 server:
-  port: 8080
+  port: ${PORT:8080}
+  forward-headers-strategy: framework
 
 spring:
   data:
     mongodb:
-      uri: mongodb://localhost:27017/sentinelcore
+      uri: ${SPRING_DATA_MONGODB_URI:mongodb+srv://nathsubhasish55_db_user:Subhasish%402004@cluster0.2knlb2p.mongodb.net/sentinelcore}
 
 jwt:
-  secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
-  expiration-ms: 86400000 # 24 hours
+  secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+  expiration-ms: ${JWT_EXPIRATION_MS:86400000} # 24 hours
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
 
 sentinel:
   admin:

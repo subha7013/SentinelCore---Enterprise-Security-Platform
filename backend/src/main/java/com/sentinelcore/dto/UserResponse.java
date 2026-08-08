@@ -21,6 +21,7 @@ public class UserResponse {
     private String department;
     private String status;
     private LocalDateTime lastLogin;
+    private String lastLoginIp;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -34,6 +35,7 @@ public class UserResponse {
                 .department(user.getDepartment())
                 .status(user.getStatus())
                 .lastLogin(user.getLastLogin())
+                .lastLoginIp(user.getLastLoginIp())
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())
                 .build();

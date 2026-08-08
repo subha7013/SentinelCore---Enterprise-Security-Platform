@@ -10,6 +10,8 @@ import com.sentinelcore.model.User;
 import com.sentinelcore.repository.UserRepository;
 import com.sentinelcore.security.JwtTokenProvider;
 import com.sentinelcore.security.UserPrincipal;
+import com.sentinelcore.util.ClientIpUtils;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.DisabledException;
@@ -38,6 +40,9 @@ public class AuthService {
 
     @Autowired
     private AuditLogService auditLogService;
+
+    @Autowired
+    private HttpServletRequest request;
 
     public UserResponse register(RegisterRequest registerRequest) {
         if (userRepository.existsByEmail(registerRequest.getEmail())) {
@@ -84,12 +89,14 @@ public class AuthService {
             UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
             User user = userPrincipal.getUser();
             
+            String clientIp = ClientIpUtils.getClientIpAddress(request);
             user.setLastLogin(LocalDateTime.now());
+            user.setLastLoginIp(clientIp);
             userRepository.save(user);
 
             // Audit Log
             auditLogService.log(user.getId(), user.getEmail(), "LOGIN_SUCCESS", "AUTH", 
-                    "Successful login for email: " + user.getEmail());
+                    "Successful login for email: " + user.getEmail() + " from IP: " + clientIp);
 
             return new LoginResponse(
                     jwt,
