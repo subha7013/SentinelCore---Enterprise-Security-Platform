@@ -147,7 +147,7 @@ export default function Dashboard() {
 
   // WebSocket real-time feed subscription to /topic/events
   const { events: liveEvents, connected: wsConnected } = useWebSocket(
-    'http://localhost:8080/ws',
+    null,
     '/topic/events',
     50
   );

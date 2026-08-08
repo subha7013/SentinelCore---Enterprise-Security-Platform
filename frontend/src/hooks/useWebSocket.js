@@ -33,7 +33,16 @@ export function useWebSocket(brokerURL, topic, maxEvents = 50) {
     }
 
     const token = localStorage.getItem('token');
-    const targetUrl = brokerURL || `http://${window.location.hostname || 'localhost'}:8080/ws`;
+    const getWsTargetUrl = () => {
+      if (brokerURL) return brokerURL;
+      if (import.meta.env.VITE_WS_BASE_URL) return import.meta.env.VITE_WS_BASE_URL;
+      const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+      if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        return `${protocol}//${window.location.host}/ws`;
+      }
+      return `${protocol}//${window.location.hostname}:8080/ws`;
+    };
+    const targetUrl = getWsTargetUrl();
 
     const client = new Client({
       webSocketFactory: () => new SockJS(targetUrl),

@@ -5,8 +5,18 @@ const AuthContext = createContext(null);
 
 export const useAuth = () => useContext(AuthContext);
 
-// Configure axios base URL
-axios.defaults.baseURL = 'http://localhost:8080';
+// Configure axios base URL dynamically for development or live production
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  // When deployed behind Nginx or same domain, relative URL is used
+  if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return '';
+  }
+  return 'http://localhost:8080';
+};
+axios.defaults.baseURL = getApiBaseUrl();
 
 export const AuthProvider = ({ children }) => {
   const { showToast } = useToast();

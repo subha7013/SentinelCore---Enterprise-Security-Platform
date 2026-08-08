@@ -52,7 +52,7 @@ export default function ProtectedLayout({ children }) {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Real-time WebSocket connection to /topic/notifications
-  const { events: wsEvents } = useWebSocket('http://localhost:8080/ws', '/topic/notifications');
+  const { events: wsEvents } = useWebSocket(null, '/topic/notifications');
 
   const fetchNotifications = useCallback(async () => {
     try {
