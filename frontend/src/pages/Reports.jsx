@@ -58,7 +58,7 @@ const SEVERITIES  = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 const FORMATS     = ['PDF', 'CSV', 'JSON'];
 const FREQUENCIES = ['Daily', 'Weekly', 'Monthly', 'Quarterly'];
 
-// ─── Standalone Printable Report HTML Generator ──────────────────────────────
+// ─── Standalone Printable Report HTML Generator (Dashboard Dark Theme) ──────
 const generatePrintableReportHTML = (item) => {
   const dateStr = new Date(item.createdAt || Date.now()).toLocaleString();
   const hashStr = item.metrics?.['Document Verification Hash'] || 'SHA256-8F9A2B4C1D9E7F0A';
@@ -71,7 +71,7 @@ const generatePrintableReportHTML = (item) => {
   const metricCardsHTML = item.metrics ? Object.entries(item.metrics)
     .filter(([k]) => k !== 'Classification' && k !== 'Document Verification Hash' && k !== 'Executive Brief' && k !== 'Applied Severity Filter')
     .map(([k, v]) => `
-      <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); padding: 14px; border-radius: 12px;">
+      <div style="background: rgba(22, 27, 34, 0.9); border: 1px solid rgba(255,255,255,0.1); padding: 14px; border-radius: 14px; box-shadow: 0 4px 14px rgba(0,0,0,0.25);">
         <div style="font-size: 10px; text-transform: uppercase; color: #94a3b8; font-family: monospace; font-weight: bold;">${k}</div>
         <div style="font-size: 18px; font-weight: 800; color: #ffffff; font-family: monospace; margin-top: 4px;">${v}</div>
         <div style="font-size: 9px; color: #34d399; font-family: monospace; margin-top: 4px;">✓ Verified Telemetry</div>
@@ -85,22 +85,30 @@ const generatePrintableReportHTML = (item) => {
       <title>${item.title} - SentinelCore Executive Security Report</title>
       <meta charset="utf-8" />
       <style>
-        @page { size: A4 portrait; margin: 12mm; }
-        body {
-          background-color: #090d16 !important;
+        @page { size: A4 portrait; margin: 10mm; }
+        html, body {
+          background: #080b14 linear-gradient(180deg, #080b14 0%, #0b1220 48%, #101827 100%) !important;
           color: #f8fafc !important;
           font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           margin: 0;
           padding: 24px;
+          min-height: 100vh;
+          box-sizing: border-box;
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
+          color-adjust: exact !important;
+        }
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+          color-adjust: exact !important;
         }
         .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #38bdf8; padding-bottom: 16px; margin-bottom: 20px; }
-        .logo-box { width: 48px; height: 48px; background: linear-gradient(135deg, #1e40af, #bae6fd); border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+        .logo-box { width: 48px; height: 48px; background: linear-gradient(135deg, #1e40af, #bae6fd); border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 16px rgba(37,99,235,0.4); }
         .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
-        .table { width: 100%; border-collapse: collapse; margin-top: 12px; font-family: monospace; font-size: 11px; }
-        .table th { background: rgba(255,255,255,0.08); text-align: left; padding: 8px; color: #94a3b8; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .table td { padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.05); color: #e2e8f0; }
+        .table { width: 100%; border-collapse: collapse; margin-top: 12px; font-family: monospace; font-size: 11px; background: rgba(11, 18, 32, 0.8); border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08); }
+        .table th { background: rgba(255,255,255,0.08); text-align: left; padding: 10px; color: #94a3b8; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .table td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color: #e2e8f0; }
         .footer { border-top: 2px solid rgba(56, 189, 248, 0.3); padding-top: 16px; margin-top: 30px; display: flex; justify-content: space-between; align-items: center; }
       </style>
     </head>
@@ -127,14 +135,14 @@ const generatePrintableReportHTML = (item) => {
       <!-- TITLE & BRIEF -->
       <div style="margin-bottom: 20px;">
         <h1 style="font-size: 20px; font-weight: 800; color: #ffffff; margin: 0 0 8px 0;">${item.title}</h1>
-        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 12px; border-radius: 10px; font-size: 12px; color: #cbd5e1; line-height: 1.5;">
+        <div style="background: rgba(22, 27, 34, 0.85); border: 1px solid rgba(255,255,255,0.08); padding: 14px; border-radius: 12px; font-size: 12px; color: #cbd5e1; line-height: 1.5;">
           <strong style="color: #38bdf8; font-family: monospace; font-size: 10px; text-transform: uppercase; display: block; margin-bottom: 4px;">Executive Brief:</strong>
           ${execBrief}
         </div>
       </div>
 
       <!-- FILTERS -->
-      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; background: rgba(15, 23, 42, 0.8); padding: 12px; border-radius: 10px; font-family: monospace; font-size: 10px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 20px;">
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; background: rgba(11, 18, 32, 0.9); padding: 12px; border-radius: 12px; font-family: monospace; font-size: 10px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 20px;">
         <div><span style="color: #64748b; display: block;">DATE RANGE</span><strong style="color: #f1f5f9;">${item.dateFrom || 'Start'} → ${item.dateTo || 'Present'}</strong></div>
         <div><span style="color: #64748b; display: block;">SEVERITY FILTER</span><strong style="color: #38bdf8;">${item.severityFilter || 'ALL'}</strong></div>
         <div><span style="color: #64748b; display: block;">TARGET TEAM</span><strong style="color: #f1f5f9;">${item.teamFilter || 'All Teams'}</strong></div>
@@ -212,14 +220,6 @@ const generatePrintableReportHTML = (item) => {
       <div style="text-align: center; font-family: monospace; font-size: 8px; color: #475569; margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
         CONFIDENTIALITY NOTICE: This document contains proprietary security telemetry data. Unauthorized distribution or copying is strictly prohibited.
       </div>
-
-      <script>
-        window.onload = function() {
-          setTimeout(function() {
-            window.print();
-          }, 300);
-        };
-      </script>
     </body>
     </html>
   `;
@@ -291,6 +291,43 @@ export default function Reports() {
     });
   }, [history, typeFilter, histSearch]);
 
+  const triggerPDFExport = (item) => {
+    if (!item) return;
+    setSelectedReportForView(item);
+
+    const htmlContent = generatePrintableReportHTML(item);
+
+    // Create or reuse hidden print iframe
+    let iframe = document.getElementById('sentinelcore-print-iframe');
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = 'sentinelcore-print-iframe';
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0px';
+      iframe.style.height = '0px';
+      iframe.style.border = '0';
+      iframe.style.visibility = 'hidden';
+      document.body.appendChild(iframe);
+    }
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(htmlContent);
+    doc.close();
+
+    // Trigger iframe print after content is rendered
+    setTimeout(() => {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch (err) {
+        console.error('Print iframe error', err);
+      }
+    }, 350);
+  };
+
   const handleGenerate = async (e) => {
     e.preventDefault();
     setGenerating(true);
@@ -300,6 +337,9 @@ export default function Reports() {
       showToast({ type: 'success', message: `Report "${res.data?.title || reportType}" generated` });
       setHistory((prev) => [res.data, ...prev]);
       setSelectedReportForView(res.data);
+      if (format === 'PDF') {
+        triggerPDFExport(res.data);
+      }
     } catch (err) {
       showToast({ type: 'error', message: err.response?.data?.message || 'Failed to generate report' });
     } finally {
@@ -307,20 +347,26 @@ export default function Reports() {
     }
   };
 
-  const triggerPDFExport = (item) => {
-    setSelectedReportForView(item);
-    const printWin = window.open('', '_blank');
-    if (printWin) {
-      printWin.document.write(generatePrintableReportHTML(item));
-      printWin.document.close();
-    } else {
-      window.print();
-    }
-  };
-
   const handleDownload = (item, fmt) => {
-    showToast({ type: 'info', message: `Preparing ${item.title} for ${fmt} download` });
+    showToast({ type: 'info', message: `Preparing ${item.title} for ${fmt} export` });
     
+    if (fmt === 'PDF') {
+      // 1. Trigger hidden iframe print with complete dark dashboard styled executive document
+      triggerPDFExport(item);
+
+      // 2. Download standalone HTML report document file to user's downloads folder
+      const htmlContent = generatePrintableReportHTML(item);
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `report_${item.id || Date.now()}.html`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
+
     let content = "";
     let mimeType = "";
     let extension = "";
@@ -338,9 +384,6 @@ export default function Reports() {
       content = JSON.stringify(item, null, 2);
       mimeType = "application/json";
       extension = "json";
-    } else {
-      triggerPDFExport(item);
-      return;
     }
 
     const blob = new Blob([content], { type: mimeType });
@@ -621,7 +664,7 @@ export default function Reports() {
                         <Download className="h-3.5 w-3.5" /> CSV
                       </button>
                       <button
-                        onClick={() => triggerPDFExport(item)}
+                        onClick={() => handleDownload(item, 'PDF')}
                         className="sc-button-secondary px-3 py-2 text-xs font-semibold flex items-center gap-1 text-sky-300 border-sky-500/30"
                       >
                         <Printer className="h-3.5 w-3.5 text-sky-400" /> Export PDF
@@ -638,7 +681,7 @@ export default function Reports() {
       {/* ── HIGH-FIDELITY EXECUTIVE REPORT VIEWER MODAL ───────────────────────── */}
       {selectedReportForView && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md overflow-y-auto">
-          <div className="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-3xl border border-white/12 bg-[#090d16] p-8 shadow-2xl sc-scale-in space-y-6">
+          <div className="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-3xl border border-white/12 bg-[#080b14] p-8 shadow-2xl sc-scale-in space-y-6">
 
             {/* Top Modal Controls */}
             <div className="flex items-center justify-between border-b border-white/10 pb-4 print:hidden">
@@ -676,8 +719,8 @@ export default function Reports() {
               </div>
             </div>
 
-            {/* Printable Document Container */}
-            <div id="printable-report-document" className="space-y-6 bg-[#090d16] p-2 text-slate-100 rounded-2xl">
+            {/* Printable Document Container (Matches Dashboard Dark Gradient Theme) */}
+            <div id="printable-report-document" className="space-y-6 bg-gradient-to-b from-[#080b14] via-[#0b1220] to-[#101827] p-6 text-slate-100 rounded-2xl border border-white/10 shadow-2xl">
 
               {/* ── OFFICIAL SENTINELCORE HEADER WITH LOGO ───────────────────── */}
               <div className="flex flex-wrap items-start justify-between gap-4 border-b-2 border-sky-500/30 pb-6">
@@ -723,7 +766,7 @@ export default function Reports() {
               </div>
 
               {/* Applied Filters Context */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono bg-slate-900/60 p-3.5 rounded-xl border border-white/8">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono bg-[#0b1220]/90 p-3.5 rounded-xl border border-white/8">
                 <div>
                   <span className="text-[9px] uppercase text-slate-500 block">Date Range</span>
                   <span className="text-slate-200 font-bold">{selectedReportForView.dateFrom || 'Start'} → {selectedReportForView.dateTo || 'Present'}</span>
@@ -751,7 +794,7 @@ export default function Reports() {
                   {selectedReportForView.metrics && Object.entries(selectedReportForView.metrics)
                     .filter(([k]) => k !== 'Classification' && k !== 'Document Verification Hash' && k !== 'Executive Brief' && k !== 'Applied Severity Filter')
                     .map(([key, val]) => (
-                      <div key={key} className="rounded-2xl border border-white/10 bg-white/4 p-4 text-left space-y-1 shadow-sm">
+                      <div key={key} className="rounded-2xl border border-white/10 bg-[#161b22]/90 p-4 text-left space-y-1 shadow-sm">
                         <p className="text-[10px] font-mono uppercase text-slate-400 font-semibold truncate">{key}</p>
                         <p className="text-lg font-extrabold text-white tracking-tight font-mono">{String(val)}</p>
                         <div className="flex items-center gap-1 text-[9px] font-mono text-emerald-400">
@@ -767,7 +810,7 @@ export default function Reports() {
                 <p className="text-[10px] font-bold font-mono uppercase tracking-[0.2em] text-slate-400 flex items-center gap-1.5">
                   <FileText className="h-3.5 w-3.5 text-purple-400" /> Operational Audit Telemetry & Evidence Trail
                 </p>
-                <div className="overflow-x-auto rounded-2xl border border-white/10 bg-slate-900/40">
+                <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#0b1220]/80">
                   <table className="w-full text-left text-xs font-mono">
                     <thead className="border-b border-white/10 bg-white/5 text-[9px] font-bold uppercase text-slate-400">
                       <tr>
@@ -865,22 +908,28 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ── PRINT CSS STYLES FOR CLEAN PDF EXPORT WITH LOGO & FOOTER ──────────── */}
+      {/* ── PRINT CSS STYLES FOR DASHBOARD DARK THEME ──────────────────────────── */}
       <style>{`
         @media print {
           @page {
             size: A4 portrait;
             margin: 10mm;
           }
-          body {
-            background-color: #090d16 !important;
+          html, body {
+            background: #080b14 linear-gradient(180deg, #080b14 0%, #0b1220 48%, #101827 100%) !important;
             color: #ffffff !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+            color-adjust: exact !important;
+          }
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
           }
           .fixed.inset-0 {
             position: static !important;
-            background: #090d16 !important;
+            background: #080b14 !important;
             padding: 0 !important;
             overflow: visible !important;
           }
@@ -888,7 +937,7 @@ export default function Reports() {
             max-width: 100% !important;
             max-height: none !important;
             border: none !important;
-            background: #090d16 !important;
+            background: #080b14 linear-gradient(180deg, #080b14 0%, #0b1220 48%, #101827 100%) !important;
             box-shadow: none !important;
             padding: 0 !important;
           }
@@ -899,7 +948,7 @@ export default function Reports() {
             display: block !important;
             position: static !important;
             width: 100% !important;
-            background: #090d16 !important;
+            background: #080b14 linear-gradient(180deg, #080b14 0%, #0b1220 48%, #101827 100%) !important;
             color: #ffffff !important;
             padding: 0 !important;
           }
