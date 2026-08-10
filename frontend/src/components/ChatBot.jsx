@@ -14,7 +14,7 @@ const QUICK_PROMPTS = [
   { label: '📚 All Modules', prompt: 'Show all modules' },
 ];
 
-const CHATBOT_API = 'https://sentinels-ai-assistant.onrender.com';
+const CHATBOT_API = 'https://sentinels-ai-assistant.onrender.com/chat';
 
 const ChatBot = () => {
   const { token } = useAuth();
