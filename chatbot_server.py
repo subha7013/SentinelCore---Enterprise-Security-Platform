@@ -179,7 +179,7 @@ def make_api_request(endpoint, authorization):
 def fetch_assets_stats(authorization):
     data = make_api_request("/api/assets?size=1000", authorization)
     if data is None:
-        return "⚠️ Unable to fetch Asset inventory from SentinelCore backend. Make sure you are logged in."
+        return "⚠️ Unable to fetch Asset inventory from SentinelCore backend. try others searching."
 
     assets = data.get("content", data) if isinstance(data, dict) else data
     if not isinstance(assets, list):
