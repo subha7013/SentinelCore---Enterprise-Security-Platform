@@ -347,7 +347,11 @@ export default function Playbooks() {
         await new Promise((resolve) => setTimeout(resolve, 300));
         setRunVisibleSteps(i);
       }
-      showToast({ type: 'success', message: `Playbook "${res.data.playbookName}" executed live on backend operations!` });
+      if (res.data.status === 'NO_THREAT_DETECTED' || res.data.threatFound === false) {
+        showToast({ type: 'success', message: `Everything OK: No threat activity detected in application logs for "${res.data.playbookName}".` });
+      } else {
+        showToast({ type: 'success', message: `Playbook "${res.data.playbookName}" executed live — Threat mitigated & IOC blocked!` });
+      }
     } catch (err) {
       showToast({ type: 'error', message: 'Failed to execute playbook on backend' });
     } finally {
@@ -1078,13 +1082,28 @@ export default function Playbooks() {
             </button>
 
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
-                <Play className="h-5 w-5 fill-emerald-400" />
+              <div className={`flex h-10 w-10 items-center justify-center rounded-2xl border ${
+                runResult.status === 'NO_THREAT_DETECTED' || runResult.threatFound === false
+                  ? 'border-sky-500/30 bg-sky-500/10 text-sky-400 shadow-[0_0_15px_rgba(56,189,248,0.2)]'
+                  : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+              }`}>
+                {runResult.status === 'NO_THREAT_DETECTED' || runResult.threatFound === false ? (
+                  <CheckCircle2 className="h-5 w-5 text-sky-400" />
+                ) : (
+                  <Play className="h-5 w-5 fill-emerald-400" />
+                )}
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="sc-badge border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
-                    <CheckCircle2 className="h-3 w-3" /> Live Backend Operations Report
+                  <span className={`sc-badge ${
+                    runResult.status === 'NO_THREAT_DETECTED' || runResult.threatFound === false
+                      ? 'border-sky-500/30 bg-sky-500/10 text-sky-300'
+                      : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                  }`}>
+                    <CheckCircle2 className="h-3 w-3" />
+                    {runResult.status === 'NO_THREAT_DETECTED' || runResult.threatFound === false
+                      ? 'Everything OK — No Threat Detected'
+                      : 'Live Backend Operations Report'}
                   </span>
                   <span className="font-mono text-xs text-slate-400">{runResult.executionTimeMs} ms</span>
                 </div>
@@ -1105,7 +1124,7 @@ export default function Playbooks() {
               <div className="rounded-xl border border-red-500/20 bg-red-500/8 p-3 text-left">
                 <p className="text-[10px] font-mono uppercase text-red-300 font-bold">Threat Intel Blocked</p>
                 <p className="text-sm font-extrabold text-white mt-0.5 truncate">
-                  {runResult.blockedIocValue ? runResult.blockedIocValue : 'N/A (No Block Step)'}
+                  {runResult.blockedIocValue ? runResult.blockedIocValue : 'Clean System (0 Safe IPs Blocked)'}
                 </p>
                 <p className="text-[9px] font-mono text-slate-400 mt-0.5">Added to Threat Intel DB</p>
               </div>
@@ -1113,7 +1132,7 @@ export default function Playbooks() {
               <div className="rounded-xl border border-purple-500/20 bg-purple-500/8 p-3 text-left">
                 <p className="text-[10px] font-mono uppercase text-purple-300 font-bold">Audit Trail Records</p>
                 <p className="text-sm font-extrabold text-white mt-0.5">
-                  {runResult.auditLogsLogged || runResult.totalSteps} Logs Recorded
+                  {runResult.auditLogsLogged || runResult.totalSteps || 1} Logs Recorded
                 </p>
                 <p className="text-[9px] font-mono text-slate-400 mt-0.5">Persisted in Audit DB</p>
               </div>
@@ -1121,8 +1140,12 @@ export default function Playbooks() {
 
             {/* Extracted Triage Summary if available */}
             {runResult.extractedSummary && (
-              <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 p-3 text-xs font-mono text-sky-200">
-                <strong className="text-sky-400 uppercase text-[10px] font-bold tracking-widest block mb-1 font-sans">Live Hardware & Telemetry Summary:</strong>
+              <div className={`rounded-xl border p-3 text-xs font-mono ${
+                runResult.status === 'NO_THREAT_DETECTED' || runResult.threatFound === false
+                  ? 'border-sky-500/30 bg-sky-500/10 text-sky-200'
+                  : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+              }`}>
+                <strong className="uppercase text-[10px] font-bold tracking-widest block mb-1 font-sans">Live Hardware & Telemetry Summary:</strong>
                 {runResult.extractedSummary}
               </div>
             )}
