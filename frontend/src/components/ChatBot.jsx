@@ -4,14 +4,14 @@ import { Bot, Loader2, MessageCircle, Send, X, Copy, Check, Trash2, Sparkles, Sh
 import { useAuth } from '../context/AuthContext';
 
 const QUICK_PROMPTS = [
-  { label: '📌 Track by ID', prompt: 'How to track incident?' },
-  { label: '🖥️ Registered Assets', prompt: 'How many assets are registered?' },
-  { label: '🚨 Incident Stats', prompt: 'What is the current incident stats?' },
-  { label: '👥 Registered Users', prompt: 'Tell me about registered users' },
-  { label: '🏢 Active Teams', prompt: 'Tell me about active teams' },
-  { label: '⚠️ Security Alerts', prompt: 'Show active security alerts' },
-  { label: '🛡️ Threat Intel', prompt: 'Show blocked threat intel IOCs' },
-  { label: '📚 All Modules', prompt: 'Show all modules' },
+  { label: '📌 Track by ID' },
+  { label: '🖥️ Registered Assets' },
+  { label: '🚨 Incident Stats' },
+  { label: '👥 Registered Users' },
+  { label: '🏢 Active Teams' },
+  { label: '⚠️ Security Alerts' },
+  { label: '🛡️ Threat Intel' },
+  { label: '📚 All Modules' },
 ];
 
 const getChatbotApiUrl = () => {
@@ -21,7 +21,7 @@ const getChatbotApiUrl = () => {
   if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
     return `${window.location.protocol}//${window.location.hostname}:5000/chat`;
   }
-  return 'http://127.0.0.1:5000/chat';
+  return 'https://sentinels-ai-assistant.onrender.com/chat';
 };
 const CHATBOT_API = getChatbotApiUrl();
 
