@@ -93,6 +93,19 @@ public class NotificationService {
         } catch (Exception ignored) {}
     }
 
+    public void notifyUser(String userEmail) {
+        try {
+            if (messagingTemplate != null) {
+                Map<String, Object> payload = Map.of("type", "NOTIFICATIONS_UPDATED", "userEmail", userEmail != null ? userEmail : "", "timestamp", LocalDateTime.now().toString());
+                if (StringUtils.hasText(userEmail)) {
+                    messagingTemplate.convertAndSend("/topic/notifications/" + userEmail.trim().toLowerCase(), payload);
+                } else {
+                    messagingTemplate.convertAndSend("/topic/notifications", payload);
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
     public NotificationPreference getPreferences(UserPrincipal userPrincipal) {
         String userId = userPrincipal != null && userPrincipal.getUser() != null ? userPrincipal.getUser().getId() : null;
         String email = userPrincipal != null ? userPrincipal.getUsername() : "system";
@@ -166,8 +179,15 @@ public class NotificationService {
                 });
 
         // 2. Incidents (INCIDENT_CREATED, INCIDENT_ESCALATED)
+        String currentUserEmail = userPrincipal != null ? userPrincipal.getUsername() : "";
         incidentRepository.findAll().stream()
                 .filter(incident -> ACTIVE_INCIDENT_STATUSES.contains(normalize(incident.getStatus(), "OPEN")))
+                .filter(incident -> {
+                    if ("PLAYBOOK_AUTOMATION".equalsIgnoreCase(incident.getCategory()) && StringUtils.hasText(incident.getCreatedBy())) {
+                        return incident.getCreatedBy().equalsIgnoreCase(currentUserEmail);
+                    }
+                    return true;
+                })
                 .forEach(incident -> {
                     String status = normalize(incident.getStatus(), "OPEN");
                     if ("IN_PROGRESS".equals(status) && isEventEnabled(eventToggles, "INCIDENT_ESCALATED")) {

@@ -34,6 +34,8 @@ public class Incident {
 
     private String assignedTeam;
 
+    private String createdBy;
+
     private String alertId;
 
     private LocalDateTime dueAt;

@@ -28,11 +28,12 @@ public class SecurityLogController {
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "25") int size,
+            @RequestParam(defaultValue = "100") int size,
             @RequestParam(defaultValue = "timestamp") String sortBy,
             @RequestParam(defaultValue = "desc") String direction) {
         Sort sort = direction.equalsIgnoreCase("desc") ? Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
-        Pageable pageable = PageRequest.of(page, size, sort);
+        int safeSize = size <= 0 ? 100 : Math.min(size, 2000);
+        Pageable pageable = PageRequest.of(page, safeSize, sort);
         return ResponseEntity.ok(securityLogService.getLogs(search, systemType, isAnomaly, startDate, endDate, pageable));
     }
 

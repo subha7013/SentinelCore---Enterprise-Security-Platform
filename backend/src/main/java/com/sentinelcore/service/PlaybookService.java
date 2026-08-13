@@ -12,6 +12,8 @@ import com.sentinelcore.repository.IncidentRepository;
 import com.sentinelcore.repository.PlaybookRepository;
 import com.sentinelcore.repository.SecurityLogRepository;
 import com.sentinelcore.repository.ThreatIntelRepository;
+import com.sentinelcore.model.User;
+import com.sentinelcore.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.PageRequest;
@@ -47,11 +49,19 @@ public class PlaybookService {
     private SecurityLogRepository securityLogRepository;
 
     @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
     private AuditLogService auditLogService;
 
     @Lazy
     @Autowired
     private NotificationService notificationService;
+
+    private String resolveUserId(String email) {
+        if (!StringUtils.hasText(email)) return null;
+        return userRepository.findByEmail(email).map(User::getId).orElse(null);
+    }
 
     private static final Pattern URL_PATTERN = Pattern.compile("(?i)https?://[\\w\\.-]+(?:\\:[0-9]+)?(?:/[\\w\\.\\-%\\?=&]*)*");
 
@@ -81,7 +91,7 @@ public class PlaybookService {
         }
 
         Playbook saved = playbookRepository.save(playbook);
-        auditLogService.log(null, currentUserEmail, "PLAYBOOK_CREATED", "AUTOMATION",
+        auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_CREATED", "AUTOMATION",
                 "Created playbook: " + saved.getName());
         return saved;
     }
@@ -111,7 +121,7 @@ public class PlaybookService {
         existing.setUpdatedAt(LocalDateTime.now());
         Playbook saved = playbookRepository.save(existing);
 
-        auditLogService.log(null, currentUserEmail, "PLAYBOOK_UPDATED", "AUTOMATION",
+        auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_UPDATED", "AUTOMATION",
                 "Updated playbook: " + saved.getName());
         return saved;
     }
@@ -119,7 +129,7 @@ public class PlaybookService {
     public void deletePlaybook(String id, String currentUserEmail) {
         Playbook existing = getPlaybook(id);
         playbookRepository.delete(existing);
-        auditLogService.log(null, currentUserEmail, "PLAYBOOK_DELETED", "AUTOMATION",
+        auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_DELETED", "AUTOMATION",
                 "Deleted playbook: " + existing.getName());
     }
 
@@ -165,34 +175,45 @@ public class PlaybookService {
             senderEmail = (String) params.getOrDefault("senderEmail", "user@company.com");
             extractedSummary = "Manual Test Input Provided: Target IP [" + sourceIp + "]";
         } else if (nameLower.contains("usb")) {
-            usbDisconnected = Boolean.TRUE.equals(params.get("usbDisconnected"))
-                    || "true".equalsIgnoreCase(String.valueOf(params.get("usbDisconnected")))
-                    || "DISCONNECTED".equalsIgnoreCase(String.valueOf(params.get("usbState")));
+            boolean hasExplicitUsbState = params.containsKey("usbState") || params.containsKey("usbDisconnected") || params.containsKey("isMalicious");
 
             Map<String, String> realUsbScan = scanRealSystemUsbDevices();
 
-            if (!params.containsKey("usbState") && !params.containsKey("usbDisconnected")) {
+            if (!hasExplicitUsbState) {
                 if ("false".equals(realUsbScan.get("connected"))) {
                     usbDisconnected = true;
                 }
+            } else {
+                usbDisconnected = Boolean.TRUE.equals(params.get("usbDisconnected"))
+                        || "true".equalsIgnoreCase(String.valueOf(params.get("usbDisconnected")))
+                        || "DISCONNECTED".equalsIgnoreCase(String.valueOf(params.get("usbState")));
             }
 
-            if (!usbDisconnected && "true".equals(realUsbScan.get("connected"))) {
-                threatFound = true;
-                String detectedName = realUsbScan.getOrDefault("deviceName", (String) params.getOrDefault("usbVendor", "SanDisk Corp. (VID: 0781, PID: 5567)"));
-                String detectedId = realUsbScan.getOrDefault("deviceId", (String) params.getOrDefault("usbDeviceId", "usb-sandisk-cruzer-32gb"));
+            if (usbDisconnected) {
+                threatFound = false;
+                extractedSummary = "USB Bus Scan Result: No USB storage drive connected to host laptop. System USB status clean.";
+            } else {
+                String detectedName = realUsbScan.getOrDefault("deviceName", (String) params.getOrDefault("usbVendor", "SanDisk Corp. Cruzer Blade 32GB"));
+                String detectedId = realUsbScan.getOrDefault("deviceId", (String) params.getOrDefault("usbDeviceId", "usb-sandisk-cruzer"));
                 String detectedVendor = realUsbScan.getOrDefault("vendor", "Standard USB Manufacturer");
 
-                usbVendor = detectedName + " (" + detectedVendor + ")";
+                usbVendor = detectedName + (StringUtils.hasText(detectedVendor) && !detectedName.contains(detectedVendor) ? " (" + detectedVendor + ")" : "");
                 usbDeviceId = detectedId;
-                extractedSummary = "Real OS Peripheral Attached: " + usbVendor + " (Device ID: " + usbDeviceId + ")";
-            } else if (!usbDisconnected) {
-                threatFound = true;
-                String usbVendorParam = (String) params.getOrDefault("usbVendor", "Connected Mobile / USB Device");
-                extractedSummary = "USB Peripheral Attached: " + usbVendorParam;
-            } else {
-                threatFound = false;
-                extractedSummary = "USB Bus Scan Result: CLEAN (No USB drive or Mobile device connected to host)";
+
+                boolean isMaliciousParam = Boolean.TRUE.equals(params.get("isMalicious"))
+                        || "true".equalsIgnoreCase(String.valueOf(params.get("isMalicious")))
+                        || "MALICIOUS".equalsIgnoreCase(String.valueOf(params.get("usbState")))
+                        || (params.containsKey("usbDeviceId") && ("usb-rubber-ducky".equals(params.get("usbDeviceId")) || String.valueOf(params.get("usbDeviceId")).contains("ducky")));
+
+                boolean foundMaliciousPayload = isMaliciousParam || inspectUsbDeviceForThreats(usbVendor, usbDeviceId);
+
+                if (foundMaliciousPayload) {
+                    threatFound = true;
+                    extractedSummary = "USB Threat Detected: Auto-detected device [" + usbVendor + "] contains unauthorized HID attack vector / malicious tools!";
+                } else {
+                    threatFound = false;
+                    extractedSummary = "No issue detected — Auto-detected USB device [" + usbVendor + "] scanned cleanly. 0 malicious tools found.";
+                }
             }
         } else if (nameLower.contains("brute")) {
             AuditLog recentFailedAudit = auditLogRepository.findAll(Sort.by(Sort.Direction.DESC, "timestamp"))
@@ -428,7 +449,7 @@ public class PlaybookService {
             playbookRepository.save(playbook);
 
             String okMsg = "Everything OK — Checked application logs & system sources. No threat activity matching playbook [" + playbook.getName() + "] was detected.";
-            auditLogService.log(null, currentUserEmail, "PLAYBOOK_CHECK_CLEAN", "AUTOMATION", okMsg);
+            auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_CHECK_CLEAN", "AUTOMATION", okMsg);
 
             Map<String, Object> result = new HashMap<>();
             result.put("playbookId", playbook.getId());
@@ -509,7 +530,7 @@ public class PlaybookService {
                     String extractedUrlStr = extractedUrls.isEmpty() ? "http://phish-secure-verify-" + randomSuffix + ".xyz/login" : String.join(", ", extractedUrls);
                     stepOutput = "[EMAIL_PARSER] Sender Address: [" + senderEmail + "]. Parsed Email Body length: " + emailBody.length() + " chars. Extracted Malicious URLs: [" + extractedUrlStr + "]. Phishing Risk Score = 92/100 (CRITICAL).";
                     extractedSummary = "Sender: " + senderEmail + " | Malicious URL: " + extractedUrlStr;
-                    auditLogService.log(null, currentUserEmail, "PLAYBOOK_EMAIL_PARSED", "AUTOMATION", stepOutput);
+                    auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_EMAIL_PARSED", "AUTOMATION", stepOutput);
                     auditLogsLogged++;
                     break;
 
@@ -521,7 +542,7 @@ public class PlaybookService {
                         stepOutput = "[HARDWARE_BUS_SCAN] Queried OS USB Peripheral Bus. Connected Drive: [" + usbVendor + "]. Device ID: " + usbDeviceId + ". Serial S/N: SD-984210. Status: UNAUTHORIZED MASS STORAGE DEVICE DETECTED.";
                         extractedSummary = "USB Attached: " + usbVendor + " (Serial: SD-984210)";
                     }
-                    auditLogService.log(null, currentUserEmail, "PLAYBOOK_HARDWARE_SCAN", "AUTOMATION", stepOutput);
+                    auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_HARDWARE_SCAN", "AUTOMATION", stepOutput);
                     auditLogsLogged++;
                     break;
 
@@ -537,25 +558,25 @@ public class PlaybookService {
                     } else {
                         stepOutput = "[THREAT_SCANNER] Executed threat signature scan across target system payload. Matched 1 active high-severity indicator.";
                     }
-                    auditLogService.log(null, currentUserEmail, "PLAYBOOK_THREAT_SCAN", "AUTOMATION", stepOutput);
+                    auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_THREAT_SCAN", "AUTOMATION", stepOutput);
                     auditLogsLogged++;
                     break;
 
                 case "QUARANTINE":
                     stepOutput = "[QUARANTINE_VAULT] Isolated file payload [" + fileName + "] into secure sandbox quarantine vault (/var/sentinel/quarantine/). Revoked execution permissions (chmod 000).";
-                    auditLogService.log(null, currentUserEmail, "PLAYBOOK_FILE_QUARANTINED", "AUTOMATION", stepOutput);
+                    auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_FILE_QUARANTINED", "AUTOMATION", stepOutput);
                     auditLogsLogged++;
                     break;
 
                 case "USER_CHALLENGE":
                     stepOutput = "[USER_MFA_CHALLENGE] Enforced Step-Up MFA Challenge for user [" + currentUserEmail + "]. Revoked active JWT refresh tokens across all sessions.";
-                    auditLogService.log(null, currentUserEmail, "PLAYBOOK_USER_CHALLENGE", "AUTOMATION", stepOutput);
+                    auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_USER_CHALLENGE", "AUTOMATION", stepOutput);
                     auditLogsLogged++;
                     break;
 
                 case "RESTRICT":
                     stepOutput = "[ACCESS_RESTRICTION] Applied network perimeter rate-limiting and access restriction for IP [" + sourceIp + "] on target URL [" + targetUrl + "].";
-                    auditLogService.log(null, currentUserEmail, "PLAYBOOK_ACCESS_RESTRICTED", "AUTOMATION", stepOutput);
+                    auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_ACCESS_RESTRICTED", "AUTOMATION", stepOutput);
                     auditLogsLogged++;
                     break;
 
@@ -567,7 +588,7 @@ public class PlaybookService {
                     } else {
                         stepOutput = "[FORENSIC_TRIAGE] Auto-mined AuditLogs & SecurityLogs for offending IP [" + sourceIp + "]. Collected 150 process tree events and active TCP sockets.";
                     }
-                    auditLogService.log(null, currentUserEmail, "PLAYBOOK_INVESTIGATION", "AUTOMATION", stepOutput);
+                    auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_INVESTIGATION", "AUTOMATION", stepOutput);
                     auditLogsLogged++;
                     break;
 
@@ -597,7 +618,7 @@ public class PlaybookService {
                     threatIntelRepository.save(ioc);
 
                     stepOutput = "[BACKEND_OPS_BLOCK] Added auto-mined malicious " + iocType + " (" + iocValue + ") to Threat Intel IOC registry and perimeter firewall blocklist.";
-                    auditLogService.log(null, currentUserEmail, "PLAYBOOK_IOC_BLOCKED", "AUTOMATION", stepOutput);
+                    auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_IOC_BLOCKED", "AUTOMATION", stepOutput);
                     auditLogsLogged++;
                     break;
 
@@ -607,7 +628,7 @@ public class PlaybookService {
                     } else {
                         stepOutput = "[CONTAINMENT_OPS] Isolated target endpoint host (IP: " + sourceIp + ") from corporate network. Revoked active SSO tokens.";
                     }
-                    auditLogService.log(null, currentUserEmail, "PLAYBOOK_CONTAINMENT", "AUTOMATION", stepOutput);
+                    auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_CONTAINMENT", "AUTOMATION", stepOutput);
                     auditLogsLogged++;
                     break;
 
@@ -615,17 +636,17 @@ public class PlaybookService {
                     stepOutput = "[NOTIFICATION_OPS] Dispatched high-priority SOC alert notification via Webhook & Notification Engine to on-call security team.";
                     try {
                         if (notificationService != null) {
-                            notificationService.notifyUpdate();
+                            notificationService.notifyUser(currentUserEmail);
                         }
                     } catch (Exception ignored) {}
-                    auditLogService.log(null, currentUserEmail, "PLAYBOOK_NOTIFICATION", "AUTOMATION", stepOutput);
+                    auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_NOTIFICATION", "AUTOMATION", stepOutput);
                     auditLogsLogged++;
                     break;
 
                 case "TICKET":
                     if (usbDisconnected && playbook.getName().toLowerCase().contains("usb")) {
                         stepOutput = "[INCIDENT_OPS] USB hardware scan CLEAN. Skipping Incident ticket creation (0 USB storage drives attached).";
-                        auditLogService.log(null, currentUserEmail, "PLAYBOOK_NO_INCIDENT", "AUTOMATION", stepOutput);
+                        auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_NO_INCIDENT", "AUTOMATION", stepOutput);
                         auditLogsLogged++;
                     } else {
                         String priority = playbook.getName().toLowerCase().contains("brute") || playbook.getName().toLowerCase().contains("sql") || playbook.getName().toLowerCase().contains("unauth") || playbook.getName().toLowerCase().contains("usb") || playbook.getName().toLowerCase().contains("ransom") ? "P1" : "P2";
@@ -638,6 +659,7 @@ public class PlaybookService {
                                 .category("PLAYBOOK_AUTOMATION")
                                 .source("SentinelCore SOAR Engine")
                                 .assignedTeam("SOC Incident Response")
+                                .createdBy(currentUserEmail)
                                 .createdAt(LocalDateTime.now())
                                 .updatedAt(LocalDateTime.now())
                                 .build();
@@ -646,26 +668,26 @@ public class PlaybookService {
                         createdIncidentTitle = savedInc.getTitle();
 
                         stepOutput = "[INCIDENT_OPS] Created P1/P2 Incident ticket in SOC queue (Ticket ID: " + savedInc.getId() + ").";
-                        auditLogService.log(null, currentUserEmail, "PLAYBOOK_INCIDENT_CREATED", "AUTOMATION", stepOutput);
+                        auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_INCIDENT_CREATED", "AUTOMATION", stepOutput);
                         auditLogsLogged++;
                     }
                     break;
 
                 case "ESCALATE":
                     stepOutput = "[AUTO_ESCALATION] Escalated incident priority to Critical P1. Notified SOC Lead and scheduled PagerDuty page.";
-                    auditLogService.log(null, currentUserEmail, "PLAYBOOK_ESCALATION", "AUTOMATION", stepOutput);
+                    auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_ESCALATION", "AUTOMATION", stepOutput);
                     auditLogsLogged++;
                     break;
 
                 case "REMEDIATE":
                     stepOutput = "[REMEDIATION_OPS] Executed system remediation script: Purged malicious artifacts, reset user MFA credentials, restored clean configuration.";
-                    auditLogService.log(null, currentUserEmail, "PLAYBOOK_REMEDIATION", "AUTOMATION", stepOutput);
+                    auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_REMEDIATION", "AUTOMATION", stepOutput);
                     auditLogsLogged++;
                     break;
 
                 default:
                     stepOutput = "[AUTOMATION_STEP] Executed playbook task: " + step.getTitle();
-                    auditLogService.log(null, currentUserEmail, "PLAYBOOK_STEP", "AUTOMATION", stepOutput);
+                    auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_STEP", "AUTOMATION", stepOutput);
                     auditLogsLogged++;
                     break;
             }
@@ -689,7 +711,7 @@ public class PlaybookService {
         playbook.setLastRunStatus("SUCCESS");
         playbookRepository.save(playbook);
 
-        auditLogService.log(null, currentUserEmail, "PLAYBOOK_EXECUTED_LIVE", "AUTOMATION",
+        auditLogService.log(resolveUserId(currentUserEmail), currentUserEmail, "PLAYBOOK_EXECUTED_LIVE", "AUTOMATION",
                 "Successfully executed live backend playbook: " + playbook.getName() + " (" + executedSteps.size() + " steps executed)");
 
         Map<String, Object> result = new HashMap<>();
@@ -713,11 +735,11 @@ public class PlaybookService {
         Map<String, String> result = new HashMap<>();
         result.put("connected", "false");
 
-        // PowerShell queries for Mobile Phones (Android/iPhone MTP), Portable Devices (WPD), USB Mass Storage, and USB Peripherals
+        // PowerShell queries prioritizing Mobile Phones (Android/iPhone MTP), Portable Devices (WPD), and Removable USB Storage
         String[] commands = new String[] {
-            "Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPClass -eq 'WPD' -or $_.PNPClass -eq 'PortableDevice' -or $_.Service -eq 'WUDFWpdMtp' -or $_.PNPDeviceID -like 'USBSTOR*' -or ($_.PNPDeviceID -like 'USB*' -and ($_.PNPClass -eq 'USBDevice' -or $_.PNPClass -eq 'DiskDrive')) } | Select-Object Name, Description, Manufacturer, PNPDeviceID, PNPClass | ConvertTo-Json",
-            "Get-PnpDevice -PresentOnly | Where-Object { $_.Class -eq 'WPD' -or $_.Class -eq 'PortableDevice' -or $_.InstanceId -like 'SWD\\WPDBUSENUM*' } | Select-Object FriendlyName, InstanceId, Class, Manufacturer | ConvertTo-Json",
-            "Get-CimInstance Win32_DiskDrive | Where-Object { $_.InterfaceType -eq 'USB' } | Select-Object Model, DeviceID, InterfaceType, Manufacturer | ConvertTo-Json"
+            "Get-PnpDevice -PresentOnly | Where-Object { ($_.Class -eq 'WPD' -or $_.Class -eq 'PortableDevice' -or $_.InstanceId -like '*WPDBUSENUM*' -or $_.InstanceId -like '*USBSTOR*') -and $_.FriendlyName -notlike '*Root Hub*' -and $_.FriendlyName -notlike '*Host Controller*' -and $_.FriendlyName -notlike '*Composite Device*' } | Select-Object FriendlyName, InstanceId, Class, Manufacturer | ConvertTo-Json",
+            "Get-CimInstance Win32_PnPEntity | Where-Object { ($_.PNPClass -eq 'WPD' -or $_.PNPClass -eq 'PortableDevice' -or $_.Service -eq 'WUDFWpdMtp' -or $_.PNPDeviceID -like '*USBSTOR*' -or $_.PNPDeviceID -like '*WPDBUSENUM*') -and $_.Name -notlike '*Root Hub*' -and $_.Name -notlike '*Host Controller*' } | Select-Object Name, Description, Manufacturer, PNPDeviceID, PNPClass | ConvertTo-Json",
+            "Get-CimInstance Win32_DiskDrive | Where-Object { $_.InterfaceType -eq 'USB' -or $_.MediaType -like '*Removable*' } | Select-Object Model, DeviceID, InterfaceType, Manufacturer | ConvertTo-Json"
         };
 
         for (String cmd : commands) {
@@ -734,15 +756,26 @@ public class PlaybookService {
                 process.waitFor();
                 String jsonStr = sb.toString().trim();
                 if (StringUtils.hasText(jsonStr) && (jsonStr.startsWith("[") || jsonStr.startsWith("{"))) {
-                    String deviceName = extractJsonField(jsonStr, "Name", "FriendlyName", "Model");
-                    String deviceId = extractJsonField(jsonStr, "PNPDeviceID", "InstanceId", "DeviceID");
+                    String deviceName = extractJsonField(jsonStr, "FriendlyName", "Name", "Model");
+                    String deviceId = extractJsonField(jsonStr, "InstanceId", "PNPDeviceID", "DeviceID");
                     String vendor = extractJsonField(jsonStr, "Manufacturer", "Description");
 
-                    if (StringUtils.hasText(deviceName) && !deviceName.toLowerCase().contains("root hub") && !deviceName.toLowerCase().contains("controller")) {
+                    String nameLower = deviceName != null ? deviceName.toLowerCase() : "";
+                    String idLower = deviceId != null ? deviceId.toLowerCase() : "";
+
+                    // Exclude internal fixed laptop hard drives / NVMe SSDs
+                    boolean isInternalFixedDisk = nameLower.contains("nvme") || nameLower.contains("samsung mz") || idLower.contains("nvme") || idLower.contains("scsi\\disk");
+
+                    if (StringUtils.hasText(deviceName) 
+                            && !isInternalFixedDisk
+                            && !nameLower.contains("root hub") 
+                            && !nameLower.contains("host controller")
+                            && !nameLower.contains("camera")
+                            && !nameLower.contains("bluetooth")) {
                         result.put("connected", "true");
                         result.put("deviceName", deviceName);
                         result.put("deviceId", StringUtils.hasText(deviceId) ? deviceId : "USB-DEV-01");
-                        result.put("vendor", StringUtils.hasText(vendor) ? vendor : "Generic USB Vendor");
+                        result.put("vendor", StringUtils.hasText(vendor) ? vendor : "Generic Mobile / USB Vendor");
                         result.put("details", jsonStr);
                         return result;
                     }
@@ -750,6 +783,39 @@ public class PlaybookService {
             } catch (Exception ignored) {}
         }
         return result;
+    }
+
+    private boolean inspectUsbDeviceForThreats(String deviceName, String deviceId) {
+        if (!StringUtils.hasText(deviceName)) return false;
+        String nameLower = deviceName.toLowerCase();
+        String idLower = deviceId != null ? deviceId.toLowerCase() : "";
+
+        // Signatures for rogue HID attack vectors & unauthorized payload tools
+        if (nameLower.contains("ducky") || nameLower.contains("hid injector") || nameLower.contains("badusb")
+                || nameLower.contains("rubber") || idLower.contains("1337") || idLower.contains("ducky")) {
+            return true;
+        }
+
+        // Powershell query removable drives for executable or autorun script payloads
+        try {
+            String cmd = "Get-Volume | Where-Object { $_.DriveType -eq 'Removable' -and $_.DriveLetter } | ForEach-Object { Get-ChildItem -Path ($_.DriveLetter + ':\\') -Recurse -Depth 2 -Include *.bat,*.vbs,*.ps1,autorun.inf,*.exe,*.scr -ErrorAction SilentlyContinue } | Select-Object -First 5 FullName | ConvertTo-Json";
+            ProcessBuilder builder = new ProcessBuilder("powershell.exe", "-Command", cmd);
+            builder.redirectErrorStream(true);
+            Process process = builder.start();
+            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                sb.append(line);
+            }
+            process.waitFor();
+            String jsonStr = sb.toString().trim();
+            if (StringUtils.hasText(jsonStr) && (jsonStr.contains(".bat") || jsonStr.contains(".ps1") || jsonStr.contains(".vbs") || jsonStr.contains("autorun.inf") || jsonStr.contains("payload"))) {
+                return true;
+            }
+        } catch (Exception ignored) {}
+
+        return false;
     }
 
     private String extractJsonField(String json, String... fieldNames) {

@@ -105,7 +105,12 @@ public class SecurityConfig {
                 .requestMatchers("/api/dashboard/**").hasAnyRole("ADMIN", "ANALYST", "VIEWER")
                 .requestMatchers("/api/notifications/**").hasAnyRole("ADMIN", "ANALYST", "VIEWER")
                 .requestMatchers("/api/compliance/**").hasAnyRole("ADMIN", "ANALYST", "VIEWER")
-                .requestMatchers("/api/playbooks/**").hasAnyRole("ADMIN", "ANALYST", "VIEWER")
+                // Playbook Management authorization rules
+                .requestMatchers(HttpMethod.GET, "/api/playbooks/**").hasAnyRole("ADMIN", "ANALYST", "VIEWER")
+                .requestMatchers(HttpMethod.POST, "/api/playbooks/*/run", "/api/playbooks/*/simulate").hasAnyRole("ADMIN", "ANALYST", "VIEWER")
+                .requestMatchers(HttpMethod.POST, "/api/playbooks/**").hasAnyRole("ADMIN", "ANALYST")
+                .requestMatchers(HttpMethod.PUT, "/api/playbooks/**").hasAnyRole("ADMIN", "ANALYST")
+                .requestMatchers(HttpMethod.DELETE, "/api/playbooks/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.GET, "/api/risk/**").hasAnyRole("ADMIN", "ANALYST", "VIEWER")
                 
                 // Allow profile and logout
