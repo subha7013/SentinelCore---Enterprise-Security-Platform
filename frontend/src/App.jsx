@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ShieldAlert } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './components/Toast';
@@ -25,6 +25,7 @@ import KnowledgeBase from './pages/KnowledgeBase';
 
 function PublicRoute({ children }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -34,7 +35,8 @@ function PublicRoute({ children }) {
     );
   }
 
-  return user ? <Navigate to="/dashboard" replace /> : children;
+  const from = location.state?.from?.pathname || '/dashboard';
+  return user ? <Navigate to={from} replace /> : children;
 }
 
 function ProtectedRoute({ children }) {

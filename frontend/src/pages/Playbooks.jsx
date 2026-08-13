@@ -38,6 +38,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useToast } from '../components/Toast';
+import { useAuth } from '../context/AuthContext';
 
 // ─── Step types ───────────────────────────────────────────────────────────────
 const STEP_TYPES = [
@@ -80,10 +81,10 @@ const SEVERITY_STYLES = {
 };
 
 const USB_DEVICES_PRESETS = [
-  { id: 'usb-sandisk-cruzer', vendor: 'SanDisk Corp. Cruzer Blade 32GB', vid: '0781', pid: '5567', serial: 'SD-984210', status: 'UNAUTHORIZED_MASS_STORAGE' },
-  { id: 'usb-kingston-dt',   vendor: 'Kingston DataTraveler 64GB G4',   vid: '0951', pid: '1666', serial: 'KT-104928', status: 'AUTHORIZED_CORPORATE_DRIVE' },
-  { id: 'usb-rubber-ducky',  vendor: 'Rogue USB Rubber Ducky HID Injector', vid: '1337', pid: '0001', serial: 'DUCKY-001', status: 'HIGH_RISK_HID_ATTACK_VECTOR' },
-  { id: 'usb-generic-flash', vendor: 'Generic USB Mass Storage 16GB',   vid: '125f', pid: '312b', serial: 'GEN-551920', status: 'UNREGISTERED_PERIPHERAL' },
+  { id: 'usb-sandisk-cruzer', vendor: 'SanDisk Corp. Cruzer Blade 32GB', vid: '0781', pid: '5567', serial: 'SD-984210', status: 'CLEAN_CORPORATE_DRIVE (No Issue)', isMalicious: false },
+  { id: 'usb-kingston-dt',   vendor: 'Kingston DataTraveler 64GB G4',   vid: '0951', pid: '1666', serial: 'KT-104928', status: 'AUTHORIZED_MASS_STORAGE (No Issue)', isMalicious: false },
+  { id: 'usb-rubber-ducky',  vendor: 'Rogue USB Rubber Ducky HID Injector', vid: '1337', pid: '0001', serial: 'DUCKY-001', status: 'HIGH_RISK_MALICIOUS_TOOL', isMalicious: true },
+  { id: 'usb-infected-flash', vendor: 'Infected Flash Drive (autorun.inf & web_shell.exe)', vid: '125f', pid: '312b', serial: 'GEN-551920', status: 'MALICIOUS_PAYLOAD_DETECTED', isMalicious: true },
 ];
 
 const emptyStep = { id: '', type: 'NOTIFY', title: '', description: '', actionNotes: '' };
@@ -124,6 +125,12 @@ function StatusBadge({ status }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function Playbooks() {
   const { showToast } = useToast();
+  const { user } = useAuth();
+  const userRole = user?.role || 'VIEWER';
+  const isViewer = userRole === 'VIEWER';
+  const isAnalyst = userRole === 'ANALYST';
+  const isAdmin = userRole === 'ADMIN';
+
   const dragRef = useRef(null);
 
   const [playbooks, setPlaybooks] = useState([]);
@@ -327,20 +334,16 @@ export default function Playbooks() {
     }
   };
 
-  // ── Open Interactive Run Modal ────────────────────────────────────────────
-  const openRunModal = () => {
+  // ── Execute Live Playbook ──────────────────────────────────────────────────
+  const executePlaybook = async (overrideForm = null) => {
     if (!selectedPbId) return;
-    setShowRunInputModal(true);
-  };
-
-  // ── Execute Live Playbook with user input params ──────────────────────────
-  const executePlaybookWithParams = async () => {
     setShowRunInputModal(false);
     setRunning(true);
     setRunResult(null);
     setRunVisibleSteps(0);
     try {
-      const res = await axios.post(`/api/playbooks/${selectedPbId}/run`, runInputForm);
+      const payload = overrideForm || runInputForm;
+      const res = await axios.post(`/api/playbooks/${selectedPbId}/run`, payload);
       setRunResult(res.data);
       const total = res.data.executedSteps?.length || 0;
       for (let i = 1; i <= total; i++) {
@@ -348,14 +351,29 @@ export default function Playbooks() {
         setRunVisibleSteps(i);
       }
       if (res.data.status === 'NO_THREAT_DETECTED' || res.data.threatFound === false) {
-        showToast({ type: 'success', message: `Everything OK: No threat activity detected in application logs for "${res.data.playbookName}".` });
+        showToast({
+          type: 'success',
+          message: res.data.extractedSummary || `No issue detected: System hardware & logs scanned cleanly for "${res.data.playbookName}".`
+        });
       } else {
-        showToast({ type: 'success', message: `Playbook "${res.data.playbookName}" executed live — Threat mitigated & IOC blocked!` });
+        showToast({
+          type: 'warning',
+          message: res.data.extractedSummary || `Playbook "${res.data.playbookName}" executed live — Malicious threat mitigated & IOC blocked!`
+        });
       }
     } catch (err) {
       showToast({ type: 'error', message: 'Failed to execute playbook on backend' });
     } finally {
       setRunning(false);
+    }
+  };
+
+  const openRunModal = () => {
+    if (!selectedPbId) return;
+    if (category === 'USB') {
+      executePlaybook({ autoMineLogs: true });
+    } else {
+      setShowRunInputModal(true);
     }
   };
 
@@ -439,6 +457,21 @@ export default function Playbooks() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {isViewer && (
+            <span className="px-2.5 py-1 text-xs font-mono font-medium rounded-full bg-blue-500/10 text-blue-300 border border-blue-500/20">
+              Viewer (Run-Only)
+            </span>
+          )}
+          {isAnalyst && (
+            <span className="px-2.5 py-1 text-xs font-mono font-medium rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">
+              Analyst (Add/Update/Run)
+            </span>
+          )}
+          {isAdmin && (
+            <span className="px-2.5 py-1 text-xs font-mono font-medium rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+              Admin (Full Access)
+            </span>
+          )}
           <button
             onClick={loadData}
             disabled={refreshing}
@@ -447,12 +480,14 @@ export default function Playbooks() {
             <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin text-purple-400' : ''}`} />
             Refresh
           </button>
-          <button
-            onClick={handleNewPlaybook}
-            className="c-p sc-button-primary px-5 py-2.5 text-xs font-semibold"
-          >
-            <Plus className="h-3.5 w-3.5" /> New Playbook
-          </button>
+          {!isViewer && (
+            <button
+              onClick={handleNewPlaybook}
+              className="c-p sc-button-primary px-5 py-2.5 text-xs font-semibold"
+            >
+              <Plus className="h-3.5 w-3.5" /> New Playbook
+            </button>
+          )}
         </div>
       </div>
 
@@ -518,19 +553,22 @@ export default function Playbooks() {
 
                       <div className="flex items-center gap-1.5">
                         <button
-                          onClick={(e) => handleToggleStatus(pb, e)}
-                          className={`p-1 rounded-lg transition ${isEnabled ? 'text-emerald-400 hover:text-emerald-300' : 'text-slate-600 hover:text-slate-400'}`}
-                          title={isEnabled ? 'Disable Playbook' : 'Enable Playbook'}
+                          onClick={(e) => !isViewer && handleToggleStatus(pb, e)}
+                          disabled={isViewer}
+                          className={`p-1 rounded-lg transition ${isViewer ? 'opacity-40 cursor-not-allowed text-slate-600' : isEnabled ? 'text-emerald-400 hover:text-emerald-300' : 'text-slate-600 hover:text-slate-400'}`}
+                          title={isViewer ? 'Viewers cannot change status' : isEnabled ? 'Disable Playbook' : 'Enable Playbook'}
                         >
                           {isEnabled ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
                         </button>
-                        <button
-                          onClick={(e) => handleDeletePlaybook(pb.id, e)}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-red-400 transition"
-                          title="Delete playbook"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={(e) => handleDeletePlaybook(pb.id, e)}
+                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-red-400 transition"
+                            title="Delete playbook"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -563,9 +601,12 @@ export default function Playbooks() {
                     <div className="flex flex-wrap items-center gap-3 mb-2">
                       <StatusBadge status={pbMeta.status} />
                       <button
-                        onClick={() => setPbMeta((p) => ({ ...p, status: p.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }))}
+                        onClick={() => !isViewer && setPbMeta((p) => ({ ...p, status: p.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }))}
+                        disabled={isViewer}
                         className={`c-p inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-mono font-bold transition ${
-                          pbMeta.status === 'ACTIVE'
+                          isViewer
+                            ? 'opacity-50 cursor-not-allowed border-white/10 bg-white/5 text-slate-400'
+                            : pbMeta.status === 'ACTIVE'
                             ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
                             : 'border-white/10 bg-white/5 text-slate-400 hover:text-white'
                         }`}
@@ -577,14 +618,16 @@ export default function Playbooks() {
 
                     <input
                       value={pbMeta.name}
+                      readOnly={isViewer}
                       onChange={(e) => setPbMeta((p) => ({ ...p, name: e.target.value }))}
-                      className="w-full bg-transparent text-lg font-extrabold text-white focus:outline-none focus:border-b focus:border-sky-400/40 pb-0.5"
+                      className={`w-full bg-transparent text-lg font-extrabold text-white focus:outline-none ${isViewer ? 'cursor-default' : 'focus:border-b focus:border-sky-400/40'} pb-0.5`}
                       placeholder="Playbook name..."
                     />
                     <input
                       value={pbMeta.description}
+                      readOnly={isViewer}
                       onChange={(e) => setPbMeta((p) => ({ ...p, description: e.target.value }))}
-                      className="mt-1 w-full bg-transparent text-xs text-slate-400 focus:outline-none"
+                      className={`mt-1 w-full bg-transparent text-xs text-slate-400 focus:outline-none ${isViewer ? 'cursor-default' : ''}`}
                       placeholder="Brief description of this response workflow..."
                     />
                   </div>
@@ -601,13 +644,15 @@ export default function Playbooks() {
                   ) : (
                     <span className="text-xs font-mono text-slate-600">No alert rule linked (Manual Execution Only)</span>
                   )}
-                  <button
-                    onClick={() => setShowLinkModal(true)}
-                    className="c-p sc-button-secondary px-3 py-1.5 text-[10px] font-semibold"
-                  >
-                    <Link2 className="h-3 w-3" />
-                    {linkedRule ? 'Change Linked Rule' : 'Link Alert Rule'}
-                  </button>
+                  {!isViewer && (
+                    <button
+                      onClick={() => setShowLinkModal(true)}
+                      className="c-p sc-button-secondary px-3 py-1.5 text-[10px] font-semibold"
+                    >
+                      <Link2 className="h-3 w-3" />
+                      {linkedRule ? 'Change Linked Rule' : 'Link Alert Rule'}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -637,18 +682,20 @@ export default function Playbooks() {
                             </div>
                           )}
                           <div
-                            draggable
-                            onDragStart={() => onDragStart(idx)}
-                            onDragOver={(e) => onDragOver(e, idx)}
-                            onDrop={(e) => onDrop(e, idx)}
+                            draggable={!isViewer}
+                            onDragStart={() => !isViewer && onDragStart(idx)}
+                            onDragOver={(e) => !isViewer && onDragOver(e, idx)}
+                            onDrop={(e) => !isViewer && onDrop(e, idx)}
                             onDragEnd={onDragEnd}
                             className={`group flex items-start gap-3 rounded-2xl border p-4 transition-all ${
                               dragRef.current === idx ? 'opacity-40 scale-95' : ''
                             } border-white/8 bg-white/3 hover:bg-white/5 hover:border-white/12`}
                           >
-                            <div className="mt-1 cursor-grab text-slate-700 hover:text-slate-400 transition active:cursor-grabbing">
-                              <GripVertical className="h-4 w-4" />
-                            </div>
+                            {!isViewer && (
+                              <div className="mt-1 cursor-grab text-slate-700 hover:text-slate-400 transition active:cursor-grabbing">
+                                <GripVertical className="h-4 w-4" />
+                              </div>
+                            )}
 
                             <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border text-[10px] font-extrabold font-mono ${style.text} ${style.border} ${style.bg}`}>
                               {idx + 1}
@@ -673,22 +720,24 @@ export default function Playbooks() {
                               )}
                             </div>
 
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
-                              <button
-                                onClick={() => openEditStep(step)}
-                                className="c-p rounded-lg border border-white/8 bg-white/5 p-1.5 text-slate-400 hover:text-white transition"
-                                title="Edit step"
-                              >
-                                <Pencil className="h-3 w-3" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteStep(step.id)}
-                                className="c-p rounded-lg border border-red-500/15 bg-red-500/5 p-1.5 text-red-400 hover:text-red-300 transition"
-                                title="Delete step"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </div>
+                            {!isViewer && (
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                                <button
+                                  onClick={() => openEditStep(step)}
+                                  className="c-p rounded-lg border border-white/8 bg-white/5 p-1.5 text-slate-400 hover:text-white transition"
+                                  title="Edit step"
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteStep(step.id)}
+                                  className="c-p rounded-lg border border-red-500/15 bg-red-500/5 p-1.5 text-red-400 hover:text-red-300 transition"
+                                  title="Delete step"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -704,14 +753,16 @@ export default function Playbooks() {
                   </div>
                 )}
 
-                <div className="mt-4 flex justify-center">
-                  <button
-                    onClick={openAddStep}
-                    className="c-p flex items-center gap-2 rounded-2xl border border-dashed border-white/15 bg-white/3 px-6 py-3 text-xs font-mono text-slate-400 hover:border-sky-400/30 hover:text-sky-300 transition"
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Add Step
-                  </button>
-                </div>
+                {!isViewer && (
+                  <div className="mt-4 flex justify-center">
+                    <button
+                      onClick={openAddStep}
+                      className="c-p flex items-center gap-2 rounded-2xl border border-dashed border-white/15 bg-white/3 px-6 py-3 text-xs font-mono text-slate-400 hover:border-sky-400/30 hover:text-sky-300 transition"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add Step
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Action bar */}
@@ -730,18 +781,20 @@ export default function Playbooks() {
                     )}
                     {running ? 'Executing Live...' : 'Run Playbook'}
                   </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="c-p sc-button-primary px-4 py-2.5 text-xs font-semibold disabled:opacity-40"
-                  >
-                    {saving ? (
-                      <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                    ) : (
-                      <Save className="h-3.5 w-3.5" />
-                    )}
-                    Save Changes
-                  </button>
+                  {!isViewer && (
+                    <button
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="c-p sc-button-primary px-4 py-2.5 text-xs font-semibold disabled:opacity-40"
+                    >
+                      {saving ? (
+                        <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                      ) : (
+                        <Save className="h-3.5 w-3.5" />
+                      )}
+                      Save Changes
+                    </button>
+                  )}
                 </div>
               </div>
             </>
@@ -822,6 +875,7 @@ export default function Playbooks() {
                             ...f,
                             usbDeviceId: found.id,
                             usbVendor: `${found.vendor} (VID: ${found.vid}, PID: ${found.pid})`,
+                            isMalicious: found.isMalicious,
                           }));
                         }
                       }}
@@ -923,7 +977,7 @@ export default function Playbooks() {
                 Cancel
               </button>
               <button
-                onClick={executePlaybookWithParams}
+                onClick={() => executePlaybook()}
                 className="c-p flex-1 rounded-xl border border-emerald-500/40 bg-emerald-500/20 px-4 py-2.5 text-xs font-extrabold text-emerald-300 hover:bg-emerald-500/30 transition flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
               >
                 <Play className="h-3.5 w-3.5 fill-emerald-300" /> Execute Live SOAR Run

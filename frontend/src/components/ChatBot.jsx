@@ -14,7 +14,16 @@ const QUICK_PROMPTS = [
   { label: '📚 All Modules', prompt: 'Show all modules' },
 ];
 
-const CHATBOT_API = 'https://sentinels-ai-assistant.onrender.com/chat';
+const getChatbotApiUrl = () => {
+  if (import.meta.env.VITE_CHATBOT_API_URL) {
+    return import.meta.env.VITE_CHATBOT_API_URL;
+  }
+  if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return `${window.location.protocol}//${window.location.hostname}:5000/chat`;
+  }
+  return 'http://127.0.0.1:5000/chat';
+};
+const CHATBOT_API = getChatbotApiUrl();
 
 const ChatBot = () => {
   const { token } = useAuth();

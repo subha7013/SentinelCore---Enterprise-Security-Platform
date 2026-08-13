@@ -7,6 +7,10 @@ import {
   BookmarkPlus,
   Calendar,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   ChevronUp,
   Clock,
   FileText,
@@ -90,6 +94,12 @@ export default function Logs() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
 
+  // ── Pagination State ──────────────────────────────────────────────────────
+  const [page, setPage]                   = useState(0);
+  const [pageSize, setPageSize]           = useState(100);
+  const [totalElements, setTotalElements] = useState(0);
+  const [totalPages, setTotalPages]       = useState(1);
+
   // ── Filters ──────────────────────────────────────────────────────────────
   const [search, setSearch]           = useState('');
   const [systemType, setSystemType]   = useState('');
@@ -122,23 +132,31 @@ export default function Logs() {
     setLoading(true);
     setError('');
     try {
-      const params = {};
+      const params = { page, size: pageSize };
       if (systemType) params.systemType = systemType;
       if (isAnomaly)  params.isAnomaly  = isAnomaly === 'true';
       if (search)     params.search     = search;
       if (startDate)  params.startDate  = new Date(startDate).toISOString();
       if (endDate)    params.endDate    = new Date(endDate).toISOString();
       const response = await axios.get('/api/logs', { params });
-      const data = response.data?.content ?? response.data ?? [];
-      setLogs(Array.isArray(data) ? data : []);
+      if (response.data && response.data.content) {
+        setLogs(response.data.content);
+        setTotalElements(response.data.totalElements || response.data.content.length);
+        setTotalPages(response.data.totalPages || 1);
+      } else {
+        const data = response.data ?? [];
+        setLogs(Array.isArray(data) ? data : []);
+        setTotalElements(Array.isArray(data) ? data.length : 0);
+        setTotalPages(1);
+      }
     } catch {
       setError('Failed to fetch security logs database.');
     } finally {
       setLoading(false);
     }
-  }, [systemType, isAnomaly, search, startDate, endDate]);
+  }, [systemType, isAnomaly, search, startDate, endDate, page, pageSize]);
 
-  useEffect(() => { fetchLogs(); }, [systemType, isAnomaly]);
+  useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
   // ── Derived: severity filter client-side ──────────────────────────────────
   const displayedLogs = useMemo(() => {
@@ -636,68 +654,131 @@ export default function Logs() {
             <p className="text-xs font-mono text-slate-600 mt-1">Upload a log file or adjust your search.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-white/8 bg-white/3 text-[10px] uppercase font-mono tracking-[0.15em] text-slate-500">
-                  <th className="py-3.5 px-5">Timestamp</th>
-                  <th className="py-3.5 px-5">System</th>
-                  <th className="py-3.5 px-5">Source IP</th>
-                  <th className="py-3.5 px-5">Identity</th>
-                  <th className="py-3.5 px-5">AI Status</th>
-                  <th className="py-3.5 px-5">Risk</th>
-                  <th className="py-3.5 px-5">Raw Payload</th>
-                  <th className="py-3.5 px-5 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5 text-xs font-mono">
-                {displayedLogs.map((item) => (
-                  <tr
-                    key={item.id}
-                    onClick={() => setSelectedLog(item)}
-                    className="cursor-pointer transition-colors hover:bg-white/3"
-                  >
-                    <td className="py-4 px-5 text-slate-400 whitespace-nowrap">
-                      {new Date(item.timestamp).toLocaleString()}
-                    </td>
-                    <td className="py-4 px-5">
-                      <SystemTypeBadge type={item.systemType} />
-                    </td>
-                    <td className="py-4 px-5 text-slate-300">{item.ipAddress}</td>
-                    <td className="py-4 px-5 text-slate-400 max-w-[120px] truncate" title={item.userEmail}>
-                      {item.userEmail}
-                    </td>
-                    <td className="py-4 px-5">
-                      {item.anomaly ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[9px] font-bold text-red-300">
-                          <AlertTriangle className="h-2.5 w-2.5" /> ANOMALY
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-bold text-emerald-300">
-                          <ShieldCheck className="h-2.5 w-2.5" /> NORMAL
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-4 px-5">
-                      <RiskBar score={item.riskScore} />
-                    </td>
-                    <td className="py-4 px-5 text-slate-400 max-w-[200px] truncate" title={item.rawMessage}>
-                      {item.rawMessage}
-                    </td>
-                    <td className="py-4 px-5 text-right" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => setDeleteTarget(item)}
-                        className="c-p rounded-lg border border-red-500/20 bg-red-500/10 p-1.5 text-red-400 transition hover:bg-red-500/25"
-                        title="Delete log"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-white/8 bg-white/3 text-[10px] uppercase font-mono tracking-[0.15em] text-slate-500">
+                    <th className="py-3.5 px-5">Timestamp</th>
+                    <th className="py-3.5 px-5">System</th>
+                    <th className="py-3.5 px-5">Source IP</th>
+                    <th className="py-3.5 px-5">Identity</th>
+                    <th className="py-3.5 px-5">AI Status</th>
+                    <th className="py-3.5 px-5">Risk</th>
+                    <th className="py-3.5 px-5">Raw Payload</th>
+                    <th className="py-3.5 px-5 text-right">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-white/5 text-xs font-mono">
+                  {displayedLogs.map((item) => (
+                    <tr
+                      key={item.id}
+                      onClick={() => setSelectedLog(item)}
+                      className="cursor-pointer transition-colors hover:bg-white/3"
+                    >
+                      <td className="py-4 px-5 text-slate-400 whitespace-nowrap">
+                        {new Date(item.timestamp).toLocaleString()}
+                      </td>
+                      <td className="py-4 px-5">
+                        <SystemTypeBadge type={item.systemType} />
+                      </td>
+                      <td className="py-4 px-5 text-slate-300">{item.ipAddress}</td>
+                      <td className="py-4 px-5 text-slate-400 max-w-[120px] truncate" title={item.userEmail}>
+                        {item.userEmail}
+                      </td>
+                      <td className="py-4 px-5">
+                        {item.anomaly ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[9px] font-bold text-red-300">
+                            <AlertTriangle className="h-2.5 w-2.5" /> ANOMALY
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-bold text-emerald-300">
+                            <ShieldCheck className="h-2.5 w-2.5" /> NORMAL
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-4 px-5">
+                        <RiskBar score={item.riskScore} />
+                      </td>
+                      <td className="py-4 px-5 text-slate-400 max-w-[200px] truncate" title={item.rawMessage}>
+                        {item.rawMessage}
+                      </td>
+                      <td className="py-4 px-5 text-right" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => setDeleteTarget(item)}
+                          className="c-p rounded-lg border border-red-500/20 bg-red-500/10 p-1.5 text-red-400 transition hover:bg-red-500/25"
+                          title="Delete log"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/8 bg-white/3 px-5 py-4 text-xs font-mono text-slate-400">
+              <div className="flex items-center gap-3">
+                <span>Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}
+                  className="rounded-xl border border-white/10 bg-black/40 px-3 py-1.5 text-xs text-slate-200 outline-none focus:border-sky-400/40"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={250}>250</option>
+                  <option value={500}>500</option>
+                  <option value={1000}>1000</option>
+                  <option value={2000}>2000 (All)</option>
+                </select>
+                <span className="hidden sm:inline text-slate-500">
+                  Showing {totalElements === 0 ? 0 : page * pageSize + 1} – {Math.min((page + 1) * pageSize, totalElements)} of {totalElements.toLocaleString()} logs
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setPage(0)}
+                  disabled={page === 0}
+                  className="c-p rounded-lg border border-white/8 bg-white/5 p-2 text-slate-400 hover:border-white/20 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+                  title="First Page"
+                >
+                  <ChevronsLeft className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setPage((p) => Math.max(p - 1, 0))}
+                  disabled={page === 0}
+                  className="c-p rounded-lg border border-white/8 bg-white/5 p-2 text-slate-400 hover:border-white/20 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+                  title="Previous Page"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="px-3 font-semibold text-slate-200">
+                  Page {page + 1} of {totalPages || 1}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(p + 1, Math.max(0, totalPages - 1)))}
+                  disabled={page >= totalPages - 1}
+                  className="c-p rounded-lg border border-white/8 bg-white/5 p-2 text-slate-400 hover:border-white/20 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+                  title="Next Page"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setPage(Math.max(0, totalPages - 1))}
+                  disabled={page >= totalPages - 1}
+                  className="c-p rounded-lg border border-white/8 bg-white/5 p-2 text-slate-400 hover:border-white/20 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+                  title="Last Page"
+                >
+                  <ChevronsRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
 

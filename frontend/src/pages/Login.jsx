@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import AuthLayout from '../layouts/AuthLayout';
 import { useToast } from '../components/Toast';
@@ -9,6 +9,9 @@ export default function Login() {
   const { login } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const from = location.state?.from?.pathname || '/dashboard';
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -41,7 +44,7 @@ export default function Login() {
     try {
       await login(email, password);
       showToast({ type: 'success', message: 'Successfully entered to SentinelCore...' });
-      navigate('/dashboard');
+      navigate(from, { replace: true });
     } catch (err) {
       const message = err.message || 'Login failed. Please check your credentials.';
       setError(message);

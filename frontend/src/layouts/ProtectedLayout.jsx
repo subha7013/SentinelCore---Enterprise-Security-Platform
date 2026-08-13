@@ -51,8 +51,9 @@ export default function ProtectedLayout({ children }) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Real-time WebSocket connection to /topic/notifications
-  const { events: wsEvents } = useWebSocket(null, '/topic/notifications');
+  // Real-time WebSocket connection to user-scoped notification topic
+  const userTopic = user?.email ? `/topic/notifications/${user.email.trim().toLowerCase()}` : '/topic/notifications';
+  const { events: wsEvents } = useWebSocket(null, userTopic);
 
   const fetchNotifications = useCallback(async () => {
     try {
