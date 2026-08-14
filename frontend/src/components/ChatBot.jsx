@@ -98,7 +98,7 @@ const ChatBot = () => {
         ...current,
         {
           from: 'bot',
-          text: "⚠️ **It seems that Our Agent is sleeping 😕.Keep trying to wake up the server....**\n\n.",
+          text: "⚠️ **It seems that Our Agent is sleeping 😕.Keep trying to wake up the server again....**",
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
