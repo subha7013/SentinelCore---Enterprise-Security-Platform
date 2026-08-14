@@ -19,7 +19,7 @@ const getChatbotApiUrl = () => {
     return import.meta.env.VITE_CHATBOT_API_URL;
   }
   if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    return `${window.location.protocol}//${window.location.hostname}:5000/chat`;
+    return 'https://sentinels-ai-assistant.onrender.com/chat';
   }
   return 'http://127.0.0.1:5000/chat';
 };
@@ -98,7 +98,7 @@ const ChatBot = () => {
         ...current,
         {
           from: 'bot',
-          text: "⚠️ **It seems that Our Agent is sleeping 😕.Keep trying to wake up the server again....**",
+          text: "⚠️ **It seems that Our Agent is sleeping 😕. Keep trying to wake up the server again....**",
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
