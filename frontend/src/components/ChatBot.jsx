@@ -98,7 +98,7 @@ const ChatBot = () => {
         ...current,
         {
           from: 'bot',
-          text: "⚠️ **Chatbot Server Offline**\n\nPlease ensure `python chatbot_server.py` is running on port 5000 to query live security statistics.",
+          text: "⚠️ **It seems that Our Agent is sleeping 😕.Keep trying to wake up the server....**\n\n.",
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
