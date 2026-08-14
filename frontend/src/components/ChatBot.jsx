@@ -19,9 +19,9 @@ const getChatbotApiUrl = () => {
     return import.meta.env.VITE_CHATBOT_API_URL;
   }
   if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    return 'http://127.0.0.1:5000/chat';
+    return 'https://sentinels-ai-assistant.onrender.com/chat';
   }
-  return 'https://sentinels-ai-assistant.onrender.com/chat';
+  return 'http://127.0.0.1:5000/chat';
 };
 const CHATBOT_API = getChatbotApiUrl();
 
