@@ -181,9 +181,9 @@ export default function ProtectedLayout({ children }) {
 
     { name: 'Log Explorer', path: '/logs', icon: FileText },
     { name: 'Alerts Management', path: '/alerts', icon: BellRing },
+    { name: 'Playbooks', path: '/playbooks', icon: BookOpen },
     { name: 'Vulnerabilities', path: '/vulnerabilities', icon: Bug },
     { name: 'Compliance', path: '/compliance', icon: ShieldCheck },
-    { name: 'Playbooks', path: '/playbooks', icon: BookOpen },
     { name: 'Reports', path: '/reports', icon: FileBarChart },
     { name: 'Notifications', path: '/notifications', icon: Bell },
     { name: 'Knowledge Base', path: '/knowledge-base', icon: BookMarked },
