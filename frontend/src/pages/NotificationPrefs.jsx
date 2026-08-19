@@ -81,7 +81,7 @@ const EVENT_TYPES = [
   { id: 'HIGH_ALERT',           label: 'High Severity Alert',    icon: Bell,          color: 'text-orange-400', defaultOn: true  },
   { id: 'INCIDENT_CREATED',     label: 'Incident Created',       icon: Siren,         color: 'text-amber-400',  defaultOn: true  },
   { id: 'INCIDENT_ESCALATED',   label: 'Incident Escalated',     icon: Shield,        color: 'text-red-400',    defaultOn: true  },
-  { id: 'VULNERABILITY_FOUND',  label: 'Critical CVE Found',     icon: Bug,           color: 'text-orange-400', defaultOn: false },
+  { id: 'VULNERABILITY_FOUND',  label: 'Vulnerability / CVE Alerts', icon: Bug,       color: 'text-orange-400', defaultOn: true  },
   { id: 'IOC_DETECTED',         label: 'IOC / Threat Detected',  icon: Shield,        color: 'text-purple-400', defaultOn: false },
   { id: 'COMPLIANCE_GAP',       label: 'Compliance Gap Opened',  icon: CheckCircle2,  color: 'text-amber-400',  defaultOn: false },
   { id: 'USER_LOGIN_FAILED',    label: 'Failed Login (×5)',      icon: X,             color: 'text-red-400',    defaultOn: true  },
