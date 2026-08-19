@@ -206,7 +206,7 @@ public class NotificationService {
 
         // 4. Vulnerabilities (VULNERABILITY_FOUND)
         if (isEventEnabled(eventToggles, "VULNERABILITY_FOUND")) {
-            notifications.addAll(vulnerabilityService.getNotifications());
+            notifications.addAll(vulnerabilityService.getNotifications(userPrincipal));
         }
 
         // 5. Compliance Gap (COMPLIANCE_GAP)
@@ -621,7 +621,7 @@ public class NotificationService {
         events.put("HIGH_ALERT", true);
         events.put("INCIDENT_CREATED", true);
         events.put("INCIDENT_ESCALATED", true);
-        events.put("VULNERABILITY_FOUND", false);
+        events.put("VULNERABILITY_FOUND", true);
         events.put("IOC_DETECTED", false);
         events.put("COMPLIANCE_GAP", false);
         events.put("USER_LOGIN_FAILED", true);
