@@ -883,6 +883,12 @@ public class PlaybookService {
 
     private void seedDefaultsIfEmpty() {
         List<Playbook> existingPlaybooks = playbookRepository.findAll();
+        if (existingPlaybooks.isEmpty()) {
+            List<Playbook> defaultPlaybooks = createDefaultPlaybooksList();
+            playbookRepository.saveAll(defaultPlaybooks);
+            return;
+        }
+
         boolean updated = false;
         for (Playbook p : existingPlaybooks) {
             if ("DRAFT".equalsIgnoreCase(p.getStatus()) || "ARCHIVED".equalsIgnoreCase(p.getStatus())) {
@@ -892,14 +898,6 @@ public class PlaybookService {
         }
         if (updated) {
             playbookRepository.saveAll(existingPlaybooks);
-        }
-
-        List<Playbook> defaultPlaybooks = createDefaultPlaybooksList();
-        
-        for (Playbook def : defaultPlaybooks) {
-            if (!playbookRepository.existsById(def.getId())) {
-                playbookRepository.save(def);
-            }
         }
     }
 
