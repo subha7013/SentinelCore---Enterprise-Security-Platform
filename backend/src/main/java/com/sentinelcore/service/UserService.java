@@ -7,6 +7,7 @@ import com.sentinelcore.exception.ResourceNotFoundException;
 import com.sentinelcore.model.Role;
 import com.sentinelcore.model.User;
 import com.sentinelcore.repository.UserRepository;
+import com.sentinelcore.util.PasswordValidator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -79,6 +80,7 @@ public class UserService {
     }
 
     public UserResponse createUser(RegisterRequest request) {
+        PasswordValidator.validatePassword(request.getPassword());
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new BadRequestException("Email is already registered.");
         }
@@ -124,6 +126,7 @@ public class UserService {
         user.setName(request.getName());
         user.setEmail(request.getEmail());
         if (StringUtils.hasText(request.getPassword())) {
+            PasswordValidator.validatePassword(request.getPassword());
             user.setPassword(passwordEncoder.encode(request.getPassword()));
         }
         if (request.getRole() != null) {
