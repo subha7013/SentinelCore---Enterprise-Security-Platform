@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
   Bell, Mail, MessageSquare, Phone, Webhook, Shield, Bug, Siren,
-  AlertTriangle, CheckCircle2, X, Plus, Trash2, GripVertical,
-  Clock, Users, ChevronDown, ChevronUp, ToggleLeft, ToggleRight,
-  Moon, Save, RefreshCw, Info, Loader2
+  AlertTriangle, CheckCircle2, X, Clock, Users, ChevronDown, ChevronUp,
+  ToggleLeft, ToggleRight, Moon, Save, RefreshCw, Info, Loader2
 } from 'lucide-react';
 import { useToast } from '../components/Toast';
 
@@ -89,76 +88,6 @@ const EVENT_TYPES = [
   { id: 'REPORT_READY',         label: 'Report Ready',           icon: CheckCircle2,  color: 'text-emerald-400',defaultOn: false },
 ];
 
-// ─── Escalation chain builder ──────────────────────────────────────────────────
-const ESCALATION_ROLES = ['Analyst', 'Team Lead', 'Administrator', 'All SOC Members'];
-
-function EscalationChain({ chain, onChange }) {
-  const addStep = () => {
-    onChange([...chain, { id: Date.now(), role: 'Analyst', delayMinutes: 15, channel: 'email' }]);
-  };
-  const removeStep = (id) => onChange(chain.filter((s) => s.id !== id));
-  const updateStep = (id, field, value) =>
-    onChange(chain.map((s) => (s.id === id ? { ...s, [field]: value } : s)));
-
-  return (
-    <div className="space-y-3">
-      {chain.length === 0 && (
-        <div className="flex items-center justify-center rounded-2xl border border-dashed border-white/10 py-8">
-          <p className="text-xs font-mono text-slate-500">No escalation steps — add one below</p>
-        </div>
-      )}
-      {chain.map((step, idx) => (
-        <div key={step.id} className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/3 p-3">
-          <GripVertical className="h-4 w-4 shrink-0 text-slate-600" />
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-sky-500/30 bg-sky-500/10 text-[10px] font-bold text-sky-300">
-            {idx + 1}
-          </div>
-          <div className="flex flex-1 flex-wrap items-center gap-2">
-            {/* Role */}
-            <select
-              value={step.role}
-              onChange={(e) => updateStep(step.id, 'role', e.target.value)}
-              className="rounded-xl border border-white/8 bg-[#0b1220] px-2 py-1.5 text-xs text-white focus:outline-none"
-            >
-              {ESCALATION_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-            </select>
-            {/* Channel */}
-            <select
-              value={step.channel}
-              onChange={(e) => updateStep(step.id, 'channel', e.target.value)}
-              className="rounded-xl border border-white/8 bg-[#0b1220] px-2 py-1.5 text-xs text-white focus:outline-none"
-            >
-              {CHANNELS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-            </select>
-            {/* Delay */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-mono text-slate-500">After</span>
-              <input
-                type="number"
-                min="0" max="1440"
-                value={step.delayMinutes}
-                onChange={(e) => updateStep(step.id, 'delayMinutes', parseInt(e.target.value, 10))}
-                className="w-16 rounded-xl border border-white/8 bg-[#0b1220] px-2 py-1.5 text-center text-xs text-white focus:outline-none"
-              />
-              <span className="text-[10px] font-mono text-slate-500">min</span>
-            </div>
-          </div>
-          <button onClick={() => removeStep(step.id)} className="shrink-0 rounded-lg p-1.5 text-slate-500 transition hover:bg-red-500/10 hover:text-red-400">
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={addStep}
-        className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/10 py-2.5 text-xs text-slate-500 transition hover:border-sky-500/30 hover:text-sky-300"
-      >
-        <Plus className="h-3.5 w-3.5" /> Add Escalation Step
-      </button>
-    </div>
-  );
-}
-
 // ─── Channel Card ─────────────────────────────────────────────────────────────
 function ChannelCard({ ch, config, onToggle, onFieldChange }) {
   const [expanded, setExpanded] = useState(false);
@@ -182,7 +111,7 @@ function ChannelCard({ ch, config, onToggle, onFieldChange }) {
           <button
             type="button"
             onClick={() => onToggle(!enabled)}
-            className="flex items-center gap-1.5 text-xs font-semibold transition"
+            className="flex items-center gap-1.5 text-xs font-semibold transition cursor-pointer"
           >
             {enabled
               ? <ToggleRight className="h-6 w-6 text-sky-400" />
@@ -192,7 +121,7 @@ function ChannelCard({ ch, config, onToggle, onFieldChange }) {
             <button
               type="button"
               onClick={() => setExpanded((v) => !v)}
-              className="rounded-lg border border-white/8 p-1.5 text-slate-400 transition hover:text-white"
+              className="rounded-lg border border-white/8 p-1.5 text-slate-400 transition hover:text-white cursor-pointer"
             >
               {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </button>
@@ -248,7 +177,7 @@ export default function NotificationPrefs() {
     EVENT_TYPES.reduce((acc, et) => ({ ...acc, [et.id]: et.defaultOn }), {})
   );
 
-  // Escalation chain
+  // Keep escalation chain state for backend payload compatibility
   const [chain, setChain] = useState([
     { id: 1, role: 'Analyst',       delayMinutes: 0,  channel: 'email'  },
     { id: 2, role: 'Team Lead',     delayMinutes: 15, channel: 'slack'  },
@@ -265,18 +194,11 @@ export default function NotificationPrefs() {
   const [digestEnabled,   setDigestEnabled]   = useState(true);
   const [digestFrequency, setDigestFrequency] = useState('Daily');
 
-  // Escalation status
-  const [escalationSequence, setEscalationSequence] = useState(null);
-
   useEffect(() => {
     const fetchPreferences = async () => {
       try {
         setLoading(true);
-        const [prefRes, escRes] = await Promise.all([
-          axios.get('/api/notifications/preferences'),
-          axios.get('/api/notifications/escalation-sequence').catch(() => ({ data: null })),
-        ]);
-
+        const prefRes = await axios.get('/api/notifications/preferences');
         const data = prefRes.data;
         if (data) {
           if (data.channels) setChannelConfigs((prev) => ({ ...prev, ...data.channels }));
@@ -292,9 +214,6 @@ export default function NotificationPrefs() {
             setDigestEnabled(data.digest.enabled ?? true);
             setDigestFrequency(data.digest.frequency || 'Daily');
           }
-        }
-        if (escRes.data) {
-          setEscalationSequence(escRes.data);
         }
       } catch (err) {
         console.error('Failed to load notification preferences', err);
@@ -321,7 +240,7 @@ export default function NotificationPrefs() {
       const payload = {
         channels: channelConfigs,
         events: eventToggles,
-        escalationChain: chain,
+        escalationChain: chain, // Retained for backend API compatibility
         quietHours: {
           enabled: quietEnabled,
           from: quietFrom,
@@ -353,7 +272,6 @@ export default function NotificationPrefs() {
     }
   };
 
-
   return (
     <div className="space-y-6 sc-fade-in">
       {/* Page header */}
@@ -366,7 +284,7 @@ export default function NotificationPrefs() {
             </div>
             <h1 className="mt-3 text-2xl font-extrabold tracking-tight text-white">Notification Preferences</h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-400">
-              Configure delivery channels, event subscriptions, escalation chains, and quiet hours for all security alerts.
+              Configure delivery channels, event subscriptions, quiet hours, and digests for all security alerts.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -398,7 +316,7 @@ export default function NotificationPrefs() {
                 <div className="flex justify-end pr-1">
                   <button
                     onClick={() => handleTest(ch.id)}
-                    className="text-[10px] font-mono text-slate-500 transition hover:text-sky-300"
+                    className="text-[10px] font-mono text-slate-500 transition hover:text-sky-300 cursor-pointer"
                   >
                     Send test notification →
                   </button>
@@ -424,7 +342,7 @@ export default function NotificationPrefs() {
                 key={et.id}
                 type="button"
                 onClick={() => toggleEvent(et.id)}
-                className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition ${
+                className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition cursor-pointer ${
                   enabled
                     ? 'border-sky-500/25 bg-sky-500/8 ring-1 ring-sky-500/15'
                     : 'border-white/6 bg-white/2 opacity-60 hover:opacity-80'
@@ -443,169 +361,106 @@ export default function NotificationPrefs() {
         </div>
       </div>
 
-      {/* ── Escalation chain + Quiet hours (side by side) ───────────────── */}
+      {/* ── Quiet hours & Alert Digest (Side by side) ───────────────── */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        {/* Escalation chain */}
-        <div className="sc-panel p-5 space-y-4">
-          <div>
-            <p className="sc-text-kicker">Escalation Chain</p>
-            <h2 className="mt-1 text-base font-bold text-white">Auto-Escalation Sequence</h2>
-            <p className="mt-1 text-xs text-slate-500">When a critical alert is unacknowledged, escalate through this chain.</p>
-          </div>
-          <EscalationChain chain={chain} onChange={setChain} />
-
-          {/* Active Auto-Escalation Status Monitor */}
-          <div className="mt-4 border-t border-white/8 pt-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-sky-400 font-bold flex items-center gap-1.5">
-                <Siren className="h-3.5 w-3.5 animate-pulse text-amber-400" />
-                Live Sequence Monitor
-              </span>
-              <span className="text-[10px] font-mono text-slate-400">
-                {escalationSequence?.totalActive || 0} active unacknowledged security items
-              </span>
+        {/* Quiet hours */}
+        <div className="sc-panel p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="sc-text-kicker">Quiet Hours</p>
+              <h2 className="mt-1 text-base font-bold text-white">Do Not Disturb</h2>
             </div>
-            {escalationSequence?.items && escalationSequence.items.length > 0 ? (
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                {escalationSequence.items.map((item) => {
-                  const esc = item.escalation || {};
-                  const assignedUsers = esc.assignedUsers || [];
-                  const userNames = assignedUsers.map((u) => u.name || u.email).join(', ');
-                  return (
-                    <div key={item.id} className="rounded-xl border border-white/8 bg-white/3 p-2.5 text-xs flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-white truncate">{item.title}</p>
-                        <p className="text-[10px] font-mono text-slate-400 mt-0.5">
-                          Step {esc.currentStepNumber}/{esc.totalSteps}: <span className="text-sky-300 font-bold">{esc.currentRole}</span> via <span className="text-purple-300">{esc.currentChannel}</span>
-                        </p>
-                        {userNames && (
-                          <p className="text-[10px] text-emerald-400 font-mono mt-0.5 truncate">
-                            Target: {userNames}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0">
-                        {esc.isEscalated ? (
-                          <span className="sc-badge border-red-500/30 bg-red-500/10 text-red-300 text-[9px]">ESCALATED</span>
-                        ) : (
-                          <span className="sc-badge border-amber-500/30 bg-amber-500/10 text-amber-300 text-[9px]">LEVEL 1</span>
-                        )}
-                        {esc.nextRole && esc.minutesUntilNextEscalation >= 0 && (
-                          <p className="text-[9px] font-mono text-slate-500 mt-0.5">Next in {esc.minutesUntilNextEscalation}m ({esc.nextRole})</p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="rounded-xl border border-dashed border-white/8 p-3 text-center text-xs font-mono text-slate-500">
-                No active unacknowledged alerts currently in escalation sequence.
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => setQuietEnabled((v) => !v)}
+              className="cursor-pointer"
+            >
+              {quietEnabled
+                ? <ToggleRight className="h-6 w-6 text-sky-400" />
+                : <ToggleLeft  className="h-6 w-6 text-slate-600" />}
+            </button>
           </div>
-        </div>
-
-        {/* Quiet hours + digest */}
-        <div className="space-y-4">
-          {/* Quiet hours */}
-          <div className="sc-panel p-5">
-            <div className="mb-4 flex items-center justify-between">
+          <div className={`space-y-4 transition-opacity ${quietEnabled ? 'opacity-100' : 'pointer-events-none opacity-30'}`}>
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <p className="sc-text-kicker">Quiet Hours</p>
-                <h2 className="mt-1 text-base font-bold text-white">Do Not Disturb</h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setQuietEnabled((v) => !v)}
-              >
-                {quietEnabled
-                  ? <ToggleRight className="h-6 w-6 text-sky-400" />
-                  : <ToggleLeft  className="h-6 w-6 text-slate-600" />}
-              </button>
-            </div>
-            <div className={`space-y-4 transition-opacity ${quietEnabled ? 'opacity-100' : 'pointer-events-none opacity-30'}`}>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-[10px] font-mono uppercase tracking-wider text-slate-500">
-                    <Moon className="mr-1 inline h-3 w-3" />From
-                  </label>
-                  <input type="time" value={quietFrom} onChange={(e) => setQuietFrom(e.target.value)}
-                    className="w-full rounded-xl border border-white/8 bg-white/5 px-3 py-2 text-xs text-white focus:outline-none" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-mono uppercase tracking-wider text-slate-500">
-                    <Clock className="mr-1 inline h-3 w-3" />Until
-                  </label>
-                  <input type="time" value={quietTo} onChange={(e) => setQuietTo(e.target.value)}
-                    className="w-full rounded-xl border border-white/8 bg-white/5 px-3 py-2 text-xs text-white focus:outline-none" />
-                </div>
+                <label className="mb-1 block text-[10px] font-mono uppercase tracking-wider text-slate-500">
+                  <Moon className="mr-1 inline h-3 w-3" />From
+                </label>
+                <input type="time" value={quietFrom} onChange={(e) => setQuietFrom(e.target.value)}
+                  className="w-full rounded-xl border border-white/8 bg-white/5 px-3 py-2 text-xs text-white focus:outline-none" />
               </div>
               <div>
-                <p className="mb-2 text-[10px] font-mono uppercase tracking-wider text-slate-500">Days</p>
-                <div className="flex gap-1.5">
-                  {['MON','TUE','WED','THU','FRI','SAT','SUN'].map((d) => (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => toggleQuietDay(d)}
-                      className={`rounded-lg border px-2 py-1.5 text-[10px] font-bold font-mono transition ${
-                        quietDays.includes(d)
-                          ? 'border-sky-500/40 bg-sky-500/15 text-sky-300'
-                          : 'border-white/8 bg-white/3 text-slate-500 hover:text-white'
-                      }`}
-                    >
-                      {d.slice(0, 2)}
-                    </button>
-                  ))}
-                </div>
+                <label className="mb-1 block text-[10px] font-mono uppercase tracking-wider text-slate-500">
+                  <Clock className="mr-1 inline h-3 w-3" />Until
+                </label>
+                <input type="time" value={quietTo} onChange={(e) => setQuietTo(e.target.value)}
+                  className="w-full rounded-xl border border-white/8 bg-white/5 px-3 py-2 text-xs text-white focus:outline-none" />
               </div>
-              <p className="text-[10px] text-slate-600">
-                ⚠️ CRITICAL alerts will still be delivered during quiet hours. Only MEDIUM and LOW are suppressed.
-              </p>
             </div>
-          </div>
-
-          {/* Digest */}
-          <div className="sc-panel p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <p className="sc-text-kicker">Alert Digest</p>
-                <h2 className="mt-1 text-base font-bold text-white">Batched Summary</h2>
-                <p className="mt-1 text-xs text-slate-500">Bundle low-priority alerts into a single digest report.</p>
-              </div>
-              <button type="button" onClick={() => setDigestEnabled((v) => !v)}>
-                {digestEnabled
-                  ? <ToggleRight className="h-6 w-6 text-sky-400" />
-                  : <ToggleLeft  className="h-6 w-6 text-slate-600" />}
-              </button>
-            </div>
-            {digestEnabled && (
-              <div className="flex gap-2">
-                {['Daily', 'Weekly', 'Monthly'].map((f) => (
+            <div>
+              <p className="mb-2 text-[10px] font-mono uppercase tracking-wider text-slate-500">Days</p>
+              <div className="flex gap-1.5 flex-wrap">
+                {['MON','TUE','WED','THU','FRI','SAT','SUN'].map((d) => (
                   <button
-                    key={f}
+                    key={d}
                     type="button"
-                    onClick={() => setDigestFrequency(f)}
-                    className={`flex-1 rounded-xl border py-2 text-xs font-semibold transition ${
-                      digestFrequency === f
+                    onClick={() => toggleQuietDay(d)}
+                    className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-bold font-mono transition cursor-pointer ${
+                      quietDays.includes(d)
                         ? 'border-sky-500/40 bg-sky-500/15 text-sky-300'
                         : 'border-white/8 bg-white/3 text-slate-500 hover:text-white'
                     }`}
                   >
-                    {f}
+                    {d.slice(0, 2)}
                   </button>
                 ))}
               </div>
-            )}
+            </div>
+            <p className="text-[10px] text-slate-600">
+              ⚠️ CRITICAL alerts will still be delivered during quiet hours. Only MEDIUM and LOW are suppressed.
+            </p>
           </div>
+        </div>
+
+        {/* Digest */}
+        <div className="sc-panel p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="sc-text-kicker">Alert Digest</p>
+              <h2 className="mt-1 text-base font-bold text-white">Batched Summary</h2>
+              <p className="mt-1 text-xs text-slate-500">Bundle low-priority alerts into a single digest report.</p>
+            </div>
+            <button type="button" onClick={() => setDigestEnabled((v) => !v)} className="cursor-pointer">
+              {digestEnabled
+                ? <ToggleRight className="h-6 w-6 text-sky-400" />
+                : <ToggleLeft  className="h-6 w-6 text-slate-600" />}
+            </button>
+          </div>
+          {digestEnabled && (
+            <div className="flex gap-2">
+              {['Daily', 'Weekly', 'Monthly'].map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setDigestFrequency(f)}
+                  className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition cursor-pointer ${
+                    digestFrequency === f
+                      ? 'border-sky-500/40 bg-sky-500/15 text-sky-300'
+                      : 'border-white/8 bg-white/3 text-slate-500 hover:text-white'
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Save bar */}
       <div className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#0b1220]/80 px-5 py-3">
         <p className="text-xs font-mono text-slate-500">
-          {enabledChannels} channel{enabledChannels !== 1 ? 's' : ''} active · {enabledEvents} event{enabledEvents !== 1 ? 's' : ''} subscribed · {chain.length}-step escalation
+          {enabledChannels} channel{enabledChannels !== 1 ? 's' : ''} active · {enabledEvents} event{enabledEvents !== 1 ? 's' : ''} subscribed
         </p>
         <div className="flex items-center gap-3">
           <button
@@ -614,14 +469,14 @@ export default function NotificationPrefs() {
               setEventToggles(EVENT_TYPES.reduce((acc, et) => ({ ...acc, [et.id]: et.defaultOn }), {}));
               showToast({ type: 'info', message: 'Settings reset to defaults' });
             }}
-            className="sc-button-secondary px-4 py-2 text-sm font-semibold"
+            className="sc-button-secondary px-4 py-2 text-sm font-semibold cursor-pointer"
           >
             <RefreshCw className="h-4 w-4" /> Reset
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="sc-button-primary px-5 py-2 text-sm font-semibold disabled:opacity-50"
+            className="sc-button-primary px-5 py-2 text-sm font-semibold disabled:opacity-50 cursor-pointer"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? 'Saving...' : 'Save Preferences'}
