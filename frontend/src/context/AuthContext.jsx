@@ -104,7 +104,12 @@ export const AuthProvider = ({ children }) => {
       return response.data;
     } catch (err) {
       setLoading(false);
-      const errMsg = err.response?.data?.message || 'Registration failed';
+      let errMsg = err.response?.data?.message;
+      if (err.response?.data?.errors) {
+        const fieldMsgs = Object.values(err.response.data.errors).join('. ');
+        if (fieldMsgs) errMsg = fieldMsgs;
+      }
+      if (!errMsg) errMsg = 'Registration failed';
       setError(errMsg);
       throw new Error(errMsg);
     }

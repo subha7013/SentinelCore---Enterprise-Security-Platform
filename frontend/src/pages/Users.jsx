@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
-import { Search, UserPlus, Edit2, Trash2, Briefcase, Filter, X, ArrowLeft, ArrowRight, Check, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Search, UserPlus, Edit2, Trash2, Briefcase, Filter, X, ArrowLeft, ArrowRight, Check, AlertTriangle, ShieldCheck, Sparkles } from 'lucide-react';
+import { evaluatePasswordStrength, getPasswordRulesStatus, generateStrongPassword, isPasswordStrong } from '../utils/passwordUtils';
 import "../index.css"
 
 export default function Users() {
@@ -125,6 +126,12 @@ export default function Users() {
     setIsModalOpen(true);
   };
 
+  const handleSuggestPassword = () => {
+    const suggested = generateStrongPassword();
+    setFormData((prev) => ({ ...prev, password: suggested }));
+    showToast({ type: 'info', message: 'Strong password generated!' });
+  };
+
   const handleFormSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -135,12 +142,18 @@ export default function Users() {
       return;
     }
 
+    if (modalType === 'ADD' && !formData.password) {
+      setFormError('Password is required for new users');
+      return;
+    }
+
+    if (formData.password && !isPasswordStrong(formData.password)) {
+      setFormError('Password must meet strong password criteria (at least 8 chars, uppercase, lowercase, number, special char)');
+      return;
+    }
+
     try {
       if (modalType === 'ADD') {
-        if (!formData.password) {
-          setFormError('Password is required for new users');
-          return;
-        }
         await axios.post('/api/users', formData);
         setFormSuccess('User created successfully!');
         showToast({ type: 'success', message: 'User created successfully.' });
@@ -439,16 +452,49 @@ export default function Users() {
               </div>
 
               <div>
-                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-400">
-                  {modalType === 'ADD' ? 'Password' : 'Change Password (Optional)'}
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-400">
+                    {modalType === 'ADD' ? 'Password' : 'Change Password (Optional)'}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleSuggestPassword}
+                    className="flex items-center space-x-1 text-[11px] text-sky-400 hover:text-sky-300 font-medium transition cursor-pointer"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    <span>Suggest Password</span>
+                  </button>
+                </div>
                 <input
-                  type="password"
+                  type="text"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  placeholder="Password"
-                  className="glass-input w-full px-4 py-3 text-xs"
+                  placeholder="Strong Password"
+                  className="glass-input w-full px-4 py-3 text-xs font-mono"
                 />
+                {formData.password.length > 0 && (
+                  <div className="mt-2 space-y-1.5 rounded-xl bg-slate-900/60 p-2.5 border border-white/5 text-[11px]">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400">Strength:</span>
+                      <span className={`font-bold font-mono ${evaluatePasswordStrength(formData.password).textClass}`}>
+                        {evaluatePasswordStrength(formData.password).label}
+                      </span>
+                    </div>
+                    <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-300 ${evaluatePasswordStrength(formData.password).color}`}
+                        style={{ width: `${evaluatePasswordStrength(formData.password).score}%` }}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 gap-0.5 text-[10px]">
+                      {getPasswordRulesStatus(formData.password).map((rule) => (
+                        <span key={rule.id} className={rule.passed ? 'text-emerald-400 font-medium' : 'text-slate-500'}>
+                          {rule.passed ? '✓' : '•'} {rule.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2 pt-2">

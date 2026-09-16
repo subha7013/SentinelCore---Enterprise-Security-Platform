@@ -3,8 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import AuthLayout from '../layouts/AuthLayout';
 import { useToast } from '../components/Toast';
-import { User, Mail, Lock, Briefcase, ShieldAlert, AlertTriangle } from 'lucide-react';
-
+import { User, Mail, Lock, Briefcase, ShieldAlert, AlertTriangle, Eye, EyeOff, Sparkles, Check, X } from 'lucide-react';
+import { evaluatePasswordStrength, getPasswordRulesStatus, generateStrongPassword, isPasswordStrong } from '../utils/passwordUtils';
 
 const REGISTRATION_ROLES = ['VIEWER', 'ANALYST'];
 
@@ -17,8 +17,19 @@ export default function Register() {
   const [password, setPassword] = useState('');
   const [department, setDepartment] = useState('');
   const [role, setRole] = useState('VIEWER');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const strength = evaluatePasswordStrength(password);
+  const rulesStatus = getPasswordRulesStatus(password);
+
+  const handleSuggestPassword = () => {
+    const suggested = generateStrongPassword();
+    setPassword(suggested);
+    setShowPassword(true);
+    showToast({ type: 'info', message: 'Strong password generated & inserted!' });
+  };
 
   const validate = () => {
     if (!name) {
@@ -38,8 +49,8 @@ export default function Register() {
       setError('Password is required');
       return false;
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters long');
+    if (!isPasswordStrong(password)) {
+      setError('Password does not meet required security criteria. Please use at least 8 characters, uppercase, lowercase, number, and special character.');
       return false;
     }
     if (!department) {
@@ -151,18 +162,68 @@ export default function Register() {
         </div>
 
         <div>
-          <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Password</label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Password</label>
+            <button
+              type="button"
+              onClick={handleSuggestPassword}
+              className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300 font-medium transition cursor-pointer"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>Suggest Password</span>
+            </button>
+          </div>
           <div className="relative">
             <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <input
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              className="glass-input w-full px-4 py-3 pl-11 text-sm"
+              placeholder="Create a strong password"
+              className="glass-input w-full px-4 py-3 pl-11 pr-10 text-sm"
               disabled={loading}
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition cursor-pointer"
+              tabIndex={-1}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
           </div>
+
+          {/* Dynamic Password Strength Indicator */}
+          {password.length > 0 && (
+            <div className="mt-3 space-y-2 rounded-xl bg-slate-900/60 p-3 border border-white/5">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400 font-medium">Password Strength:</span>
+                <span className={`font-bold font-mono ${strength.textClass}`}>{strength.label}</span>
+              </div>
+              <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-300 ${strength.color}`}
+                  style={{ width: `${strength.score}%` }}
+                />
+              </div>
+
+              {/* Rules checklist */}
+              <div className="pt-1.5 grid grid-cols-1 gap-1 text-xs">
+                {rulesStatus.map((rule) => (
+                  <div key={rule.id} className="flex items-center space-x-2">
+                    {rule.passed ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
+                    ) : (
+                      <X className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
+                    )}
+                    <span className={rule.passed ? 'text-emerald-300 font-medium' : 'text-slate-400'}>
+                      {rule.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <button
