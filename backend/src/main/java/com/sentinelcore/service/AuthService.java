@@ -11,6 +11,7 @@ import com.sentinelcore.repository.UserRepository;
 import com.sentinelcore.security.JwtTokenProvider;
 import com.sentinelcore.security.UserPrincipal;
 import com.sentinelcore.util.ClientIpUtils;
+import com.sentinelcore.util.PasswordValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -45,6 +46,7 @@ public class AuthService {
     private HttpServletRequest request;
 
     public UserResponse register(RegisterRequest registerRequest) {
+        PasswordValidator.validatePassword(registerRequest.getPassword());
         if (userRepository.existsByEmail(registerRequest.getEmail())) {
             throw new BadRequestException("Email address already in use.");
         }
